@@ -1,0 +1,33 @@
+﻿    private async Task<IReadOnlyList<Itm1Row>> QueryItm1Async(DateTime sinceDate, int sinceTs, int batchSize, CancellationToken ct)
+    {
+        var dateStr = sinceDate.ToString("yyyy-MM-dd");
+
+        const string sql = @"
+            SELECT 
+                ITEMCODE,
+                PRICELIST,
+                PRICE,
+                CURRENCY,
+                DISCOUNTPERCENT,
+                UPDATEDATE,
+                UPDATETS
+            FROM ITM1
+            WHERE UPDATEDATE >= ? 
+              AND (UPDATEDATE > ? OR UPDATETS > ?)
+            ORDER BY UPDATEDATE ASC, UPDATETS ASC
+            LIMIT ?;
+        ";
+
+        using var connection = new OdbcConnection(_hanaConfig.Value.ConnectionString);
+        await connection.OpenAsync(ct);
+
+        var results = await connection.QueryAsync<Itm1Row>(sql, new
+        {
+            SinceDate = dateStr,
+            SinceDate2 = dateStr,
+            SinceTs = sinceTs,
+            Limit = batchSize
+        });
+
+        return results.ToList();
+    }

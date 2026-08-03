@@ -1,0 +1,42 @@
+# Build outputs
+bin/
+obj/
+out/
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+
+# NuGet
+*.nupkg
+packages/
+
+# Test results
+TestResults/
+test-results/*.trx
+
+# Logs
+*.log
+logs/
+
+# Environment / secrets
+.env
+*.secrets.json
+
+# Docker volumes
+postgres-data/
+rabbitmq-data/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local Kimi plans
+.kimi/

@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: integration-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: integration
+      POSTGRES_PASSWORD: HoN3390
+      POSTGRES_DB: integration_bus
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U integration -d integration_bus"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: integration-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  seq:
+    image: datalust/seq:2024
+    container_name: integration-seq
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+    ports:
+      - "5341:5341"
+      - "8080:80"
+    volumes:
+      - seq-data:/data
+
+  # Nota: API y Worker requieren SAP HANA ODBC client para Linux.
+ # Para desarrollo local se recomienda ejecutarlos en el host Windows.
+  # Ver Dockerfile.Api y Dockerfile.Worker para referencia.
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  seq-data:

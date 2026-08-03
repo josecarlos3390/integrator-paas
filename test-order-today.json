@@ -1,0 +1,12 @@
+﻿{
+  "crmOrderId": "CRM-TEST-004",
+  "customerId": "T1IVCL156626",
+  "orderDate": "2026-04-24",
+  "lines": [
+    {
+      "sku": "LBLELEC010109",
+      "quantity": 2,
+      "price": 100.50
+    }
+  ]
+}

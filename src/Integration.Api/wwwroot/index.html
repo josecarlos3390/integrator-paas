@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Integration Bus - Panel de Operaciones</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; color: #333; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+        /* Header */
+        .header-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #e0e4e8; }
+        .header-bar h1 { font-size: 22px; color: #1a1a2e; margin: 0; }
+        .header-meta { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; font-size: 13px; color: #666; }
+        .tenant-badge { background: #3498db; color: white; padding: 4px 10px; border-radius: 12px; font-weight: 600; }
+        .connection-status { display: inline-flex; align-items: center; gap: 5px; }
+        .connection-status.online::before { content: ''; display: inline-block; width: 8px; height: 8px; background: #27ae60; border-radius: 50%; }
+        .connection-status.offline::before { content: ''; display: inline-block; width: 8px; height: 8px; background: #e74c3c; border-radius: 50%; }
+        .last-updated { font-style: italic; color: #888; }
+
+        /* Tabs */
+        .tabs-nav { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid #e0e4e8; flex-wrap: wrap; background: white; border-radius: 8px 8px 0 0; padding: 0 10px; }
+        .tab-btn { padding: 12px 20px; background: none; border: none; border-bottom: 3px solid transparent; cursor: pointer; font-size: 14px; font-weight: 600; color: #666; transition: all .15s; }
+        .tab-btn:hover { color: #3498db; }
+        .tab-btn.active { color: #3498db; border-bottom-color: #3498db; background: #f0f7ff; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Section headers */
+        .section-title { font-size: 16px; margin-bottom: 4px; color: #1a1a2e; display: flex; align-items: center; gap: 8px; }
+        .section-desc { font-size: 12px; color: #888; margin-bottom: 12px; }
+        .section { background: white; border-radius: 8px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+
+        /* Stats grids */
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 25px; }
+        .stat-card { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; border-top: 3px solid #ddd; }
+        .stat-card h3 { font-size: 11px; text-transform: uppercase; color: #888; margin-bottom: 6px; }
+        .stat-card .value { font-size: 26px; font-weight: 700; }
+        .stat-card.total { border-top-color: #3498db; }
+        .stat-card.total .value { color: #3498db; }
+        .stat-card.pending { border-top-color: #f39c12; }
+        .stat-card.pending .value { color: #f39c12; }
+        .stat-card.processed { border-top-color: #27ae60; }
+        .stat-card.processed .value { color: #27ae60; }
+        .stat-card.failed { border-top-color: #e74c3c; }
+        .stat-card.failed .value { color: #e74c3c; }
+        .stat-card.deadletter { border-top-color: #9b59b6; }
+        .stat-card.deadletter .value { color: #9b59b6; }
+        .stat-card.info { border-top-color: #17a2b8; }
+        .stat-card.info .value { color: #17a2b8; }
+
+        /* Filters */
+        .filters { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+        .filters select, .filters button { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        .filters button { background: #3498db; color: white; border: none; cursor: pointer; }
+        .filters button:hover { background: #2980b9; }
+        .filters label { font-size: 13px; color: #555; }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; font-weight: 600; color: #555; }
+        tr:hover { background: #f8f9fa; }
+        .badge { padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: 600; text-transform: uppercase; }
+        .badge-pending { background: #fff3cd; color: #856404; }
+        .badge-processed { background: #d4edda; color: #155724; }
+        .badge-failed { background: #f8d7da; color: #721c24; }
+        .badge-deadletter { background: #e2d4f0; color: #5a2d8a; }
+        .badge-idempotency { background: #fff3cd; color: #856404; }
+        .btn-retry { padding: 4px 8px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; }
+        .btn-retry:hover { background: #c0392b; }
+        .error-msg { color: #e74c3c; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .refresh-indicator { display: inline-block; margin-left: 10px; font-size: 12px; color: #888; }
+        .log-direction { font-weight: 600; }
+        .log-sap-to-crm { color: #3498db; }
+        .log-crm-to-sap { color: #e67e22; }
+        .empty { text-align: center; padding: 30px; color: #888; }
+
+        /* Toggle switches */
+        .toggle-switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; border-radius: 24px; transition: .2s; }
+        .toggle-slider:before { position: absolute; content: ''; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: .2s; }
+        .toggle-switch input:checked + .toggle-slider { background-color: #27ae60; }
+        .toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); }
+        .toggle-switch input:disabled + .toggle-slider { opacity: 0.5; cursor: not-allowed; }
+        .feature-flag-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+        .feature-flag-row:last-child { border-bottom: none; }
+        .feature-flag-name { font-weight: 600; font-size: 14px; }
+        .feature-flag-desc { font-size: 12px; color: #888; }
+
+        /* Alerts */
+        .alert-badge { display: inline-block; background: #e74c3c; color: white; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 12px; margin-left: 8px; vertical-align: middle; }
+        .alert-badge.warning { background: #f39c12; }
+        .alert-severity-critical { color: #e74c3c; font-weight: 700; }
+        .alert-severity-warning { color: #f39c12; font-weight: 700; }
+        .btn-ack { padding: 4px 8px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; }
+        .btn-ack:hover { background: #219150; }
+
+        /* Pagination */
+        .pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; flex-wrap: wrap; gap: 8px; }
+        .pagination-info { font-size: 12px; color: #666; }
+        .pagination-buttons { display: flex; gap: 4px; }
+        .pagination-buttons button { padding: 4px 10px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .pagination-buttons button:hover:not(:disabled) { background: #f0f0f0; }
+        .pagination-buttons button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .pagination-buttons button.active { background: #3498db; color: white; border-color: #3498db; }
+
+        /* Metrics runtime tables — FIXED */
+        .metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-bottom: 15px; }
+        .metrics-grid > div { min-width: 0; }
+        .metrics-grid h3 { font-size: 13px; margin-bottom: 8px; color: #555; }
+        .metrics-grid table { min-width: 0; }
+
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .header-bar h1 { font-size: 16px; }
+            .stats { grid-template-columns: repeat(2, 1fr); }
+            .stat-card { padding: 10px; }
+            .stat-card .value { font-size: 22px; }
+            .section { padding: 10px; }
+            .filters select, .filters button { font-size: 13px; padding: 6px 8px; }
+            table { font-size: 11px; }
+            th, td { padding: 6px; }
+            .metrics-grid { grid-template-columns: 1fr; }
+            .tab-btn { padding: 10px 14px; font-size: 13px; }
+        }
+        @media (max-width: 480px) {
+            .stats { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+            .stat-card h3 { font-size: 10px; }
+            .stat-card .value { font-size: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header-bar">
+            <h1>🔄 Integration Bus - Panel de Operaciones</h1>
+            <div class="header-meta">
+                <span class="tenant-badge" id="tenantBadge">Cargando tenant...</span>
+                <span class="connection-status online" id="connStatus">Conectado</span>
+                <span class="last-updated" id="lastUpdated">Actualizando...</span>
+                <span class="alert-badge" id="alertCountBadge" style="display:none;">0</span>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs-nav">
+            <button class="tab-btn active" onclick="showTab('tab-dashboard', this)">📊 Dashboard</button>
+            <button class="tab-btn" onclick="showTab('tab-metrics', this)">📈 Métricas Detalladas</button>
+            <button class="tab-btn" onclick="showTab('tab-ingestor', this)">📥 Ingestor</button>
+            <button class="tab-btn" onclick="showTab('tab-features', this)">🚦 Feature Flags</button>
+            <button class="tab-btn" onclick="showTab('tab-alerts', this)">🚨 Alertas</button>
+        </div>
+
+        <!-- TAB 1: Dashboard -->
+        <div id="tab-dashboard" class="tab-content active">
+            <!-- Sección 1: Cola de Outbox HANA -->
+            <div class="section-title">📦 Cola de Outbox SAP HANA</div>
+            <div class="section-desc">Estado actual de los eventos pendientes en SAP HANA. Se actualiza en tiempo real cada 5 segundos.</div>
+            <div class="stats" id="stats">
+                <div class="stat-card total"><h3>Total en Cola</h3><div class="value">-</div></div>
+                <div class="stat-card pending"><h3>Pendientes</h3><div class="value">-</div></div>
+                <div class="stat-card processed"><h3>Ya Procesados</h3><div class="value">-</div></div>
+                <div class="stat-card failed"><h3>Con Error</h3><div class="value">-</div></div>
+                <div class="stat-card deadletter"><h3>Dead Letter</h3><div class="value">-</div></div>
+                <div class="stat-card info"><h3>Duplicados Ignorados</h3><div class="value">-</div></div>
+            </div>
+
+            <!-- Sección 2: Métricas de Rendimiento -->
+            <div class="section-title">⚡ Métricas de Rendimiento <span id="metricsWindowLabel" style="font-size:12px; color:#888;"></span></div>
+            <div class="section-desc">Eventos procesados, errores y latencias calculadas desde los logs de integración.</div>
+            <div class="filters">
+                <label>Ventana de tiempo:</label>
+                <select id="metricsWindowSelect" onchange="loadMetrics()">
+                    <option value="1">Última hora</option>
+                    <option value="6">Últimas 6 horas</option>
+                    <option value="24" selected>Últimas 24 horas</option>
+                </select>
+                <span class="refresh-indicator">Auto-refresh: 5s</span>
+            </div>
+            <div class="stats" id="runtimeStats">
+                <div class="stat-card processed"><h3>Procesados</h3><div class="value">-</div></div>
+                <div class="stat-card deadletter"><h3>Dead Letters</h3><div class="value">-</div></div>
+                <div class="stat-card failed"><h3>Reintentos Fallidos</h3><div class="value">-</div></div>
+                <div class="stat-card info"><h3>Circuit Breaker</h3><div class="value">-</div></div>
+                <div class="stat-card total"><h3>Token Refreshes</h3><div class="value">-</div></div>
+                <div class="stat-card pending"><h3>Feature Flags</h3><div class="value">-</div></div>
+            </div>
+
+            <!-- Eventos del Outbox -->
+            <div class="section">
+                <div class="section-title">📋 Eventos del Outbox (HANA)</div>
+                <div class="section-desc">Eventos individuales extraídos de SAP HANA. Use los filtros para buscar por documento, operación o estado.</div>
+                <div class="filters">
+                    <select id="objectTypeFilter">
+                        <option value="">Todos los documentos</option>
+                        <option value="2">BusinessPartners (2)</option>
+                        <option value="4">Items (4)</option>
+                        <option value="13">Invoices (13)</option>
+                        <option value="17">Orders (17)</option>
+                        <option value="PRICE_LIST">Price Lists</option>
+                    </select>
+                    <select id="eventTypeFilter">
+                        <option value="">Todas las ops</option>
+                        <option value="Created">Created</option>
+                        <option value="Updated">Updated</option>
+                        <option value="Deleted">Deleted</option>
+                    </select>
+                    <select id="statusFilter">
+                        <option value="">Todos los estados</option>
+                        <option value="pending">Pendiente</option>
+                        <option value="processed">Procesado</option>
+                        <option value="failed">Fallido (reintentando)</option>
+                        <option value="dead_letter">Dead Letter</option>
+                    </select>
+                    <select id="eventsPageSize" onchange="changePageSize('events', this.value)">
+                        <option value="10">10 / pág</option>
+                        <option value="25" selected>25 / pág</option>
+                        <option value="50">50 / pág</option>
+                        <option value="100">100 / pág</option>
+                    </select>
+                    <button onclick="loadEvents()">Filtrar</button>
+                </div>
+                <table id="eventsTable">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Doc</th>
+                            <th>Op</th>
+                            <th>Prioridad</th>
+                            <th>AggregateId</th>
+                            <th>Estado</th>
+                            <th>Intentos</th>
+                            <th>Error</th>
+                            <th>Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <div class="pagination" id="eventsPagination"></div>
+            </div>
+
+            <!-- Logs de Ejecución -->
+            <div class="section">
+                <div class="section-title">📊 Logs de Ejecución (PostgreSQL)</div>
+                <div class="section-desc">Auditoría de todas las operaciones de integración. SAP → CRM indica eventos salientes; CRM → SAP indica webhooks entrantes.</div>
+                <div class="filters">
+                    <select id="logDirectionFilter">
+                        <option value="">Todas las direcciones</option>
+                        <option value="SapToCrm">SAP → CRM</option>
+                        <option value="CrmToSap">CRM → SAP</option>
+                    </select>
+                    <select id="logStatusFilter">
+                        <option value="">Todos los estados</option>
+                        <option value="success">Éxito</option>
+                        <option value="error">Error</option>
+                        <option value="dead_letter">Dead Letter</option>
+                        <option value="skipped">Skipped</option>
+                    </select>
+                    <select id="logsPageSize" onchange="changePageSize('logs', this.value)">
+                        <option value="10">10 / pág</option>
+                        <option value="25" selected>25 / pág</option>
+                        <option value="50">50 / pág</option>
+                        <option value="100">100 / pág</option>
+                    </select>
+                    <button onclick="loadLogs()">Filtrar</button>
+                </div>
+                <table id="logsTable">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Dirección</th>
+                            <th>Tipo</th>
+                            <th>ExternalId</th>
+                            <th>Estado</th>
+                            <th>Duración (ms)</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <div class="pagination" id="logsPagination"></div>
+            </div>
+        </div>
+
+        <!-- TAB 2: Métricas Detalladas -->
+        <div id="tab-metrics" class="tab-content">
+            <div class="section">
+                <div class="section-title">📊 Detalle de Métricas</div>
+                <div class="section-desc">Breakdown por estado, tipo de evento, dead letters y latencias.</div>
+                <div class="metrics-grid">
+                    <div>
+                        <h3>Por Estado</h3>
+                        <table id="metricsByStatus"><thead><tr><th>Estado</th><th>Count</th></tr></thead><tbody></tbody></table>
+                    </div>
+                    <div>
+                        <h3>Por Tipo de Evento</h3>
+                        <table id="metricsByType"><thead><tr><th>Tipo</th><th>Count</th></tr></thead><tbody></tbody></table>
+                    </div>
+                    <div>
+                        <h3>Dead Letters por Tipo</h3>
+                        <table id="metricsDeadLetter"><thead><tr><th>Tipo</th><th>Count</th></tr></thead><tbody></tbody></table>
+                    </div>
+                    <div>
+                        <h3>Circuit Breaker por Sistema</h3>
+                        <table id="metricsCircuit"><thead><tr><th>Sistema</th><th>Count</th></tr></thead><tbody></tbody></table>
+                    </div>
+                </div>
+                <div>
+                    <h3>Latencia (ms)</h3>
+                    <table id="metricsLatency"><thead><tr><th>Tipo</th><th>Muestras</th><th>Min</th><th>Avg</th><th>P95</th><th>P99</th><th>Max</th></tr></thead><tbody></tbody></table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: Ingestor -->
+        <div id="tab-ingestor" class="tab-content">
+            <div class="section">
+                <div class="section-title">📥 Data Ingestor — Solicitudes de Integración</div>
+                <div class="section-desc">Peticiones recibidas desde sistemas externos. El ingestor almacena durablemente y enruta al sistema destino.</div>
+                <div class="filters">
+                    <select id="ingestStatusFilter">
+                        <option value="">Todos los estados</option>
+                        <option value="received">Recibido</option>
+                        <option value="processing">Procesando</option>
+                        <option value="completed">Completado</option>
+                        <option value="failed">Fallido</option>
+                        <option value="dead_letter">Dead Letter</option>
+                    </select>
+                    <select id="ingestSourceFilter">
+                        <option value="">Todos los orígenes</option>
+                        <option value="SAP">SAP</option>
+                        <option value="HANSA_CRM">HansaCRM</option>
+                        <option value="unknown">Desconocido</option>
+                    </select>
+                    <select id="ingestTargetFilter">
+                        <option value="">Todos los destinos</option>
+                        <option value="CRM">CRM</option>
+                        <option value="ERP">ERP</option>
+                    </select>
+                    <select id="ingestPageSize" onchange="changePageSize('ingestor', this.value)">
+                        <option value="10">10 / pág</option>
+                        <option value="25" selected>25 / pág</option>
+                        <option value="50">50 / pág</option>
+                        <option value="100">100 / pág</option>
+                    </select>
+                    <button onclick="loadIngestorRequests()">Filtrar</button>
+                </div>
+                <table id="ingestorTable">
+                    <thead>
+                        <tr>
+                            <th>Recibido</th>
+                            <th>Tenant</th>
+                            <th>Origen</th>
+                            <th>Destino</th>
+                            <th>Entidad</th>
+                            <th>ExternalId</th>
+                            <th>Estado</th>
+                            <th>Intentos</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <div class="pagination" id="ingestorPagination"></div>
+            </div>
+        </div>
+
+        <!-- TAB 4: Feature Flags -->
+        <div id="tab-features" class="tab-content">
+            <div class="section">
+                <div class="section-title">🚦 Feature Flags por Tenant</div>
+                <div class="section-desc">Activa o desactiva funcionalidades de integración por tenant. Los cambios se aplican inmediatamente.</div>
+                <div class="filters">
+                    <select id="featureTenantSelect">
+                        <option value="">Cargando tenants...</option>
+                    </select>
+                    <button onclick="loadFeatureFlags()">Cargar Flags</button>
+                </div>
+                <div id="featureFlagsContainer"></div>
+            </div>
+        </div>
+
+        <!-- TAB 4: Alertas -->
+        <div id="tab-alerts" class="tab-content">
+            <div class="section">
+                <div class="section-title">🚨 Alertas Operativas</div>
+                <div class="section-desc">Alertas generadas automáticamente cuando se detectan condiciones anómalas (dead letters acumulados, tasa de error alta, etc.).</div>
+                <div class="filters">
+                    <select id="alertsPageSize" onchange="changePageSize('alerts', this.value)">
+                        <option value="10">10 / pág</option>
+                        <option value="25" selected>25 / pág</option>
+                        <option value="50">50 / pág</option>
+                        <option value="100">100 / pág</option>
+                    </select>
+                </div>
+                <table id="alertsTable">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Severidad</th>
+                            <th>Tipo</th>
+                            <th>Tenant</th>
+                            <th>Descripción</th>
+                            <th>Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <div class="pagination" id="alertsPagination"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin + '/api/dashboard';
+        const ADMIN_BASE = window.location.origin + '/api/admin';
+
+        let currentTenantId = 'tenant-001';
+        let isConnected = true;
+
+        const paginationState = {
+            events: { page: 1, pageSize: 25 },
+            logs: { page: 1, pageSize: 25 },
+            alerts: { page: 1, pageSize: 25 },
+            ingestor: { page: 1, pageSize: 25 }
+        };
+
+        function showTab(tabId, btn) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            btn.classList.add('active');
+        }
+
+        async function fetchJson(url) {
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(res.statusText);
+                isConnected = true;
+                return await res.json();
+            } catch (e) {
+                console.error('Fetch error:', e);
+                isConnected = false;
+                return null;
+            }
+        }
+
+        function updateConnectionStatus() {
+            const el = document.getElementById('connStatus');
+            if (isConnected) {
+                el.textContent = 'Conectado';
+                el.className = 'connection-status online';
+            } else {
+                el.textContent = 'Sin conexión';
+                el.className = 'connection-status offline';
+            }
+            document.getElementById('lastUpdated').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-ES');
+        }
+
+        async function loadTenantInfo() {
+            const data = await fetchJson(`${API_BASE}/tenant-info`);
+            if (!data) return;
+            currentTenantId = data.tenantId;
+            const badge = document.getElementById('tenantBadge');
+            badge.textContent = `${data.name} (${data.tenantId})`;
+        }
+
+        function renderPagination(containerId, page, pageSize, totalCount, onPageChange) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+            if (totalCount === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            const start = (page - 1) * pageSize + 1;
+            const end = Math.min(page * pageSize, totalCount);
+
+            let buttons = '';
+            const maxButtons = 5;
+            let startPage = Math.max(1, page - Math.floor(maxButtons / 2));
+            let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+            if (endPage - startPage + 1 < maxButtons) {
+                startPage = Math.max(1, endPage - maxButtons + 1);
+            }
+
+            if (startPage > 1) {
+                buttons += `<button onclick="${onPageChange}(1)">1</button>`;
+                if (startPage > 2) buttons += `<button disabled>...</button>`;
+            }
+            for (let i = startPage; i <= endPage; i++) {
+                buttons += `<button class="${i === page ? 'active' : ''}" onclick="${onPageChange}(${i})">${i}</button>`;
+            }
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) buttons += `<button disabled>...</button>`;
+                buttons += `<button onclick="${onPageChange}(${totalPages})">${totalPages}</button>`;
+            }
+
+            container.innerHTML = `
+                <div class="pagination-info">Mostrando ${start}-${end} de ${totalCount}</div>
+                <div class="pagination-buttons">
+                    <button onclick="${onPageChange}(${page - 1})" ${page <= 1 ? 'disabled' : ''}>← Anterior</button>
+                    ${buttons}
+                    <button onclick="${onPageChange}(${page + 1})" ${page >= totalPages ? 'disabled' : ''}>Siguiente →</button>
+                </div>
+            `;
+        }
+
+        async function loadMetrics() {
+            const hours = document.getElementById('metricsWindowSelect').value;
+            const data = await fetchJson(`${API_BASE}/metrics?hours=${hours}`);
+            if (!data) return;
+            const windowLabel = document.getElementById('metricsWindowLabel');
+            if (windowLabel && data.windowHours) {
+                windowLabel.textContent = `(últimas ${data.windowHours}h)`;
+            }
+            const cards = document.querySelectorAll('#runtimeStats .stat-card .value');
+            cards[0].textContent = data.totalEventsProcessed ?? 0;
+            cards[1].textContent = data.totalDeadLetters ?? 0;
+            cards[2].textContent = data.totalRetries ?? 0;
+            cards[3].textContent = data.totalCircuitBreakerChanges ?? 0;
+            cards[4].textContent = data.totalTokenRefreshes ?? 0;
+            cards[5].textContent = data.totalFeatureFlagDecisions ?? 0;
+
+            renderMetricsTable('metricsByStatus', data.eventsByStatus);
+            renderMetricsTable('metricsByType', data.eventsByType);
+            renderMetricsTable('metricsDeadLetter', data.deadLettersByCategory);
+            renderMetricsTable('metricsCircuit', data.circuitBreakerBySystem);
+            renderLatencyTable('metricsLatency', data.latencySummary);
+        }
+
+        function renderMetricsTable(tableId, dict) {
+            const tbody = document.querySelector(`#${tableId} tbody`);
+            if (!dict || Object.keys(dict).length === 0) {
+                tbody.innerHTML = '<tr><td colspan="2" class="empty">Sin datos</td></tr>';
+                return;
+            }
+            const rows = Object.entries(dict).sort((a, b) => b[1] - a[1]).map(([k, v]) => `
+                <tr><td>${k}</td><td>${v}</td></tr>
+            `).join('');
+            tbody.innerHTML = rows;
+        }
+
+        function renderLatencyTable(tableId, dict) {
+            const tbody = document.querySelector(`#${tableId} tbody`);
+            if (!dict || Object.keys(dict).length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty">Sin datos</td></tr>';
+                return;
+            }
+            const rows = Object.entries(dict).map(([k, v]) => `
+                <tr>
+                    <td>${k}</td>
+                    <td>${v.count}</td>
+                    <td>${v.min}</td>
+                    <td>${v.avg}</td>
+                    <td>${v.p95}</td>
+                    <td>${v.p99}</td>
+                    <td>${v.max}</td>
+                </tr>
+            `).join('');
+            tbody.innerHTML = rows;
+        }
+
+        async function loadStats() {
+            const data = await fetchJson(`${API_BASE}/stats`);
+            if (!data) return;
+            const cards = document.querySelectorAll('#stats .stat-card .value');
+            cards[0].textContent = data.total ?? 0;
+            cards[1].textContent = data.pending ?? 0;
+            cards[2].textContent = data.processed ?? 0;
+            cards[3].textContent = data.failed ?? 0;
+            cards[4].textContent = data.deadLetter ?? 0;
+            cards[5].textContent = data.idempotencyHits ?? 0;
+        }
+
+        function getStatusBadge(evt) {
+            if (evt.isDeadLetter) return '<span class="badge badge-deadletter">Dead Letter</span>';
+            if (evt.processedAt) return '<span class="badge badge-processed">Procesado</span>';
+            if (evt.attemptCount > 0) return '<span class="badge badge-failed">Fallido</span>';
+            return '<span class="badge badge-pending">Pendiente</span>';
+        }
+
+        function changePageSize(table, size) {
+            paginationState[table].pageSize = parseInt(size);
+            paginationState[table].page = 1;
+            if (table === 'events') loadEvents(1);
+            else if (table === 'logs') loadLogs(1);
+            else if (table === 'alerts') loadAlerts(1);
+            else if (table === 'ingestor') loadIngestorRequests(1);
+        }
+
+        async function loadIngestorRequests(page) {
+            if (page) paginationState.ingestor.page = page;
+            const status = document.getElementById('ingestStatusFilter').value;
+            const source = document.getElementById('ingestSourceFilter').value;
+            const target = document.getElementById('ingestTargetFilter').value;
+            paginationState.ingestor.pageSize = parseInt(document.getElementById('ingestPageSize').value);
+            const { page: p, pageSize: ps } = paginationState.ingestor;
+            const url = `${API_BASE}/ingestor/requests?page=${p}&pageSize=${ps}${status ? '&status=' + status : ''}${source ? '&sourceSystem=' + source : ''}${target ? '&targetSystem=' + target : ''}`;
+            const data = await fetchJson(url);
+            const tbody = document.querySelector('#ingestorTable tbody');
+            if (!data || !data.items || data.items.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="empty">No hay solicitudes</td></tr>';
+                renderPagination('ingestorPagination', p, ps, 0, 'loadIngestorRequests');
+                return;
+            }
+            const statusBadgeClass = s => {
+                if (s === 'completed') return 'badge-processed';
+                if (s === 'failed') return 'badge-failed';
+                if (s === 'dead_letter') return 'badge-deadletter';
+                if (s === 'processing') return 'badge-pending';
+                return 'badge-pending';
+            };
+            tbody.innerHTML = data.items.map(req => `
+                <tr>
+                    <td>${new Date(req.receivedAt).toLocaleString('es-ES')}</td>
+                    <td><code>${req.tenantId}</code></td>
+                    <td>${req.sourceSystem}</td>
+                    <td>${req.targetSystem}</td>
+                    <td><span class="badge badge-pending">${req.entityType}</span></td>
+                    <td><code>${req.externalId || '-'}</code></td>
+                    <td><span class="badge ${statusBadgeClass(req.status)}">${req.status}</span></td>
+                    <td>${req.attemptCount}</td>
+                    <td class="error-msg" title="${req.errorMessage || ''}">${req.errorMessage || '-'}</td>
+                </tr>
+            `).join('');
+            renderPagination('ingestorPagination', data.page, data.pageSize, data.totalCount, 'loadIngestorRequests');
+        }
+
+        async function loadEvents(page) {
+            if (page) paginationState.events.page = page;
+            const objectType = document.getElementById('objectTypeFilter').value;
+            const type = document.getElementById('eventTypeFilter').value;
+            const status = document.getElementById('statusFilter').value;
+            paginationState.events.pageSize = parseInt(document.getElementById('eventsPageSize').value);
+            const { page: p, pageSize: ps } = paginationState.events;
+            const url = `${API_BASE}/events?page=${p}&pageSize=${ps}${objectType ? '&objectType=' + objectType : ''}${type ? '&eventType=' + type : ''}${status ? '&status=' + status : ''}`;
+            const data = await fetchJson(url);
+            const tbody = document.querySelector('#eventsTable tbody');
+            if (!data || !data.items || data.items.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="empty">No hay eventos</td></tr>';
+                renderPagination('eventsPagination', p, ps, 0, 'loadEvents');
+                return;
+            }
+            const objectTypeLabels = { '2': 'BP', '4': 'Item', '13': 'Inv', '17': 'Ord' };
+            tbody.innerHTML = data.items.map(evt => `
+                <tr>
+                    <td>${new Date(evt.occurredAt).toLocaleString('es-ES')}</td>
+                    <td><span class="badge badge-pending">${objectTypeLabels[evt.objectType] || evt.objectType}</span></td>
+                    <td>${evt.eventType}</td>
+                    <td><span class="badge badge-pending">${evt.priority || 0}</span></td>
+                    <td><code>${evt.aggregateId}</code></td>
+                    <td>${getStatusBadge(evt)}</td>
+                    <td>${evt.attemptCount}</td>
+                    <td class="error-msg" title="${evt.errorMessage || ''}">${evt.errorMessage || '-'}</td>
+                    <td>
+                        ${(evt.isDeadLetter || (evt.attemptCount > 0 && !evt.processedAt)) 
+                            ? `<button class="btn-retry" onclick="retryEvent('${evt.id}')">Reintentar</button>` 
+                            : '-'}
+                    </td>
+                </tr>
+            `).join('');
+            renderPagination('eventsPagination', data.page, data.pageSize, data.totalCount, 'loadEvents');
+        }
+
+        async function loadLogs(page) {
+            if (page) paginationState.logs.page = page;
+            const direction = document.getElementById('logDirectionFilter').value;
+            const status = document.getElementById('logStatusFilter').value;
+            paginationState.logs.pageSize = parseInt(document.getElementById('logsPageSize').value);
+            const { page: p, pageSize: ps } = paginationState.logs;
+            const url = `${API_BASE}/logs?page=${p}&pageSize=${ps}${direction ? '&direction=' + direction : ''}${status ? '&status=' + status : ''}`;
+            const data = await fetchJson(url);
+            const tbody = document.querySelector('#logsTable tbody');
+            if (!data || !data.items || data.items.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="empty">No hay logs</td></tr>';
+                renderPagination('logsPagination', p, ps, 0, 'loadLogs');
+                return;
+            }
+            tbody.innerHTML = data.items.map(log => `
+                <tr>
+                    <td>${new Date(log.createdAt).toLocaleString('es-ES')}</td>
+                    <td class="log-direction ${log.direction === 'SapToCrm' ? 'log-sap-to-crm' : 'log-crm-to-sap'}">
+                        ${log.direction === 'SapToCrm' ? 'SAP → CRM' : 'CRM → SAP'}
+                    </td>
+                    <td>${log.eventType}</td>
+                    <td><code>${log.externalId || '-'}</code></td>
+                    <td><span class="badge badge-${log.status === 'success' ? 'processed' : log.status === 'dead_letter' ? 'deadletter' : log.status === 'idempotency_hit' ? 'idempotency' : 'failed'}">${log.status}</span></td>
+                    <td>${log.durationMs || '-'}</td>
+                    <td class="error-msg" title="${log.errorMessage || ''}">${log.errorMessage || '-'}</td>
+                </tr>
+            `).join('');
+            renderPagination('logsPagination', data.page, data.pageSize, data.totalCount, 'loadLogs');
+        }
+
+        async function retryEvent(eventId) {
+            if (!confirm('¿Reintentar este evento?')) return;
+            try {
+                const res = await fetch(`${API_BASE}/retry?eventId=${eventId}`, { method: 'POST' });
+                if (res.ok) {
+                    alert('Evento encolado para reintento');
+                    loadEvents();
+                } else {
+                    alert('Error al reintentar: ' + res.statusText);
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        // Feature Flags
+        const FEATURE_DESCRIPTIONS = {
+            'BusinessPartnerSync': 'Sincronización de Clientes / Business Partners (SAP → CRM)',
+            'ItemSync': 'Sincronización de Artículos / Items (SAP → CRM)',
+            'InvoiceSync': 'Sincronización de Facturas (SAP → CRM)',
+            'SalesOrderSync': 'Sincronización de Pedidos (bidireccional)',
+            'PriceListSync': 'Sincronización de Listas de Precio (SAP → CRM)'
+        };
+
+        async function loadTenantsForFeatures() {
+            const data = await fetchJson(`${ADMIN_BASE}/tenants`);
+            const select = document.getElementById('featureTenantSelect');
+            if (!data || data.length === 0) {
+                select.innerHTML = '<option value="">No hay tenants</option>';
+                return;
+            }
+            select.innerHTML = data.map(t => `<option value="${t.tenantId}">${t.name} (${t.tenantId})</option>`).join('');
+            loadFeatureFlags();
+        }
+
+        async function loadFeatureFlags() {
+            const tenantId = document.getElementById('featureTenantSelect').value;
+            if (!tenantId) return;
+            const container = document.getElementById('featureFlagsContainer');
+            container.innerHTML = '<div class="empty">Cargando...</div>';
+
+            const flags = await fetchJson(`${ADMIN_BASE}/features/${tenantId}`);
+            const flagMap = {};
+            if (flags) {
+                flags.forEach(f => flagMap[f.featureKey] = f.isEnabled);
+            }
+
+            const knownKeys = Object.keys(FEATURE_DESCRIPTIONS);
+            const html = knownKeys.map(key => {
+                const isEnabled = flagMap[key] !== undefined ? flagMap[key] : true;
+                return `
+                    <div class="feature-flag-row">
+                        <div>
+                            <div class="feature-flag-name">${FEATURE_DESCRIPTIONS[key]}</div>
+                            <div class="feature-flag-desc">Key: ${key}</div>
+                        </div>
+                        <label class="toggle-switch" title="${isEnabled ? 'Activo' : 'Inactivo'}">
+                            <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="toggleFeatureFlag('${tenantId}', '${key}', this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                `;
+            }).join('');
+            container.innerHTML = html || '<div class="empty">No hay feature flags configurados</div>';
+        }
+
+        async function toggleFeatureFlag(tenantId, featureKey, isEnabled) {
+            try {
+                const res = await fetch(`${ADMIN_BASE}/features/${tenantId}/${featureKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ isEnabled })
+                });
+                if (!res.ok) throw new Error(res.statusText);
+                loadFeatureFlags();
+            } catch (e) {
+                alert('Error al actualizar feature flag: ' + e.message);
+            }
+        }
+
+        // Alertas
+        async function loadAlertStats() {
+            const data = await fetchJson(`${ADMIN_BASE}/alerts/stats`);
+            const badge = document.getElementById('alertCountBadge');
+            if (data && data.totalActive > 0) {
+                badge.textContent = data.totalActive;
+                badge.style.display = 'inline-block';
+                badge.className = data.critical > 0 ? 'alert-badge' : 'alert-badge warning';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        async function loadAlerts(page) {
+            if (page) paginationState.alerts.page = page;
+            paginationState.alerts.pageSize = parseInt(document.getElementById('alertsPageSize').value);
+            const { page: p, pageSize: ps } = paginationState.alerts;
+            const data = await fetchJson(`${ADMIN_BASE}/alerts?active=true&page=${p}&pageSize=${ps}`);
+            const tbody = document.querySelector('#alertsTable tbody');
+            if (!data || !data.items || data.items.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty">No hay alertas activas</td></tr>';
+                renderPagination('alertsPagination', p, ps, 0, 'loadAlerts');
+                return;
+            }
+            tbody.innerHTML = data.items.map(a => `
+                <tr>
+                    <td>${new Date(a.createdAt).toLocaleString('es-ES')}</td>
+                    <td><span class="alert-severity-${a.severity.toLowerCase()}">${a.severity}</span></td>
+                    <td>${a.alertType}</td>
+                    <td>${a.tenantId}</td>
+                    <td><strong>${a.title}</strong><br><span style="color:#888;font-size:11px;">${a.message}</span></td>
+                    <td><button class="btn-ack" onclick="ackAlert('${a.id}')">Ack</button></td>
+                </tr>
+            `).join('');
+            renderPagination('alertsPagination', data.page, data.pageSize, data.totalCount, 'loadAlerts');
+        }
+
+        async function ackAlert(id) {
+            if (!confirm('¿Acknowledge esta alerta?')) return;
+            try {
+                const res = await fetch(`${ADMIN_BASE}/alerts/${id}/acknowledge`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+                if (res.ok) {
+                    loadAlerts();
+                    loadAlertStats();
+                } else {
+                    alert('Error: ' + res.statusText);
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        // Auto-refresh cada 5 segundos
+        setInterval(() => {
+            loadStats();
+            loadMetrics();
+            loadAlertStats();
+            loadEvents();
+            loadLogs();
+            loadAlerts();
+            loadIngestorRequests();
+            updateConnectionStatus();
+        }, 5000);
+
+        // Carga inicial
+        loadTenantInfo();
+        loadStats();
+        loadMetrics();
+        loadEvents();
+        loadLogs();
+        loadIngestorRequests();
+        loadTenantsForFeatures();
+        loadAlertStats();
+        loadAlerts();
+        updateConnectionStatus();
+    </script>
+</body>
+</html>

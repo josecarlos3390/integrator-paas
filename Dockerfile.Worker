@@ -1,0 +1,38 @@
+# Dockerfile para Integration.Worker
+# Nota: SAP HANA ODBC para Linux requiere instalación adicional del cliente HANA.
+# Para desarrollo con HANA, se recomienda ejecutar el Worker en el host Windows.
+
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+# Copiar archivos de proyecto y restaurar dependencias
+COPY src/Integration.Worker/Integration.Worker.csproj Integration.Worker/
+COPY src/Integration.Shared/Integration.Shared.csproj Integration.Shared/
+COPY src/Integration.Api/Integration.Api.csproj Integration.Api/
+RUN dotnet restore Integration.Worker/Integration.Worker.csproj
+
+# Copiar todo el código y compilar
+COPY src/ .
+RUN dotnet publish Integration.Worker/Integration.Worker.csproj -c Release -o /app/publish --no-restore
+
+# Runtime
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+WORKDIR /app
+
+# Instalar unixodbc (prerrequisito para SAP HANA ODBC en Linux)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    unixodbc \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Nota: Para conexión real a SAP HANA, descargar e instalar el SAP HANA client:
+# https://tools.hana.ondemand.com/#hanatools
+# Ejemplo:
+# COPY hdbclient.tgz /tmp/
+# RUN cd /tmp && tar -xzf hdbclient.tgz && ./hdbinst --path=/usr/sap/hdbclient
+
+COPY --from=build /app/publish .
+
+ENV DOTNET_ENVIRONMENT=Production
+
+ENTRYPOINT ["dotnet", "Integration.Worker.dll"]

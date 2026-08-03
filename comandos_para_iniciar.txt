@@ -1,0 +1,14 @@
+para resetear el docker:
+docker-compose down -v
+
+
+para iniciar docker:
+docker-compose up postgres rabbitmq seq
+docker-compose up -d
+
+para iniciar Integration.API:
+dotnet run --project src\Integration.Api
+
+para iniciar Integration.Worder:
+dotnet run --project src\Integration.Worker
+
