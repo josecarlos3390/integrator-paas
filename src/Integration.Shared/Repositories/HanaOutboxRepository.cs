@@ -139,11 +139,14 @@ public class HanaOutboxRepository
                 WHERE ID = ?
                   AND (LEASED_UNTIL IS NULL OR LEASED_UNTIL < CURRENT_TIMESTAMP);";
 
-            var affected = await conn.ExecuteAsync(singleSql, new object[] { leasedUntil, idList[0] });
+            // Anonymous type: Dapper maps properties positionally for ODBC (declaration order).
+            // Passing object[] would be treated as multi-execute and crashes with InvalidProgramException.
+            var affected = await conn.ExecuteAsync(singleSql, new { LeasedUntil = leasedUntil, Id = idList[0] });
             return affected > 0 ? idList : Array.Empty<string>();
         }
 
-        // Batch UPDATE using IN clause with positional parameters for HANA ODBC
+        // Batch UPDATE using IN clause with positional parameters for HANA ODBC.
+        // DynamicParameters preserves insertion order for ODBC pseudo-positional mapping.
         var placeholders = string.Join(", ", idList.Select(_ => "?"));
         var updateSql = $@"
             UPDATE INTEGRATION_BUS.OUTBOX_EVENTS
@@ -151,8 +154,12 @@ public class HanaOutboxRepository
             WHERE ID IN ({placeholders})
               AND (LEASED_UNTIL IS NULL OR LEASED_UNTIL < CURRENT_TIMESTAMP);";
 
-        var updateParams = new List<object> { leasedUntil };
-        updateParams.AddRange(idList);
+        var updateParams = new DynamicParameters();
+        updateParams.Add("LeasedUntil", leasedUntil);
+        for (var i = 0; i < idList.Count; i++)
+        {
+            updateParams.Add($"Id{i}", idList[i]);
+        }
         var affectedTotal = await conn.ExecuteAsync(updateSql, updateParams);
 
         if (affectedTotal == idList.Count)
@@ -164,9 +171,12 @@ public class HanaOutboxRepository
             WHERE ID IN ({placeholders})
               AND LEASED_UNTIL = ?;";
 
-        var selectParams = new List<object>();
-        selectParams.AddRange(idList);
-        selectParams.Add(leasedUntil);
+        var selectParams = new DynamicParameters();
+        for (var i = 0; i < idList.Count; i++)
+        {
+            selectParams.Add($"Id{i}", idList[i]);
+        }
+        selectParams.Add("LeasedUntil", leasedUntil);
 
         var leasedIds = await conn.QueryAsync<string>(selectSql, selectParams);
         return leasedIds.ToList();
@@ -186,7 +196,7 @@ public class HanaOutboxRepository
 
         using var lease = await _pool.AcquireAsync(ct);
         var leasedUntil = DateTime.UtcNow.Add(delay);
-        await lease.Connection.ExecuteAsync(sql, new object[] { leasedUntil, id });
+        await lease.Connection.ExecuteAsync(sql, new { LeasedUntil = leasedUntil, Id = id });
     }
 
     public async Task ResetForRetryAsync(string aggregateId, CancellationToken ct = default)
