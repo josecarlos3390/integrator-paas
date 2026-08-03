@@ -40,3 +40,6 @@ Thumbs.db
 
 # Local Kimi plans
 .kimi/
+
+# Instaladores descargados para despliegue en Windows Server (ver INSTALACION.md)
+.installers/
