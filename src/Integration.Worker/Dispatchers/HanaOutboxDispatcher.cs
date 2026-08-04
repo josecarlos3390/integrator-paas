@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Integration.Shared.Clients;
 using Integration.Shared.Configuration;
@@ -11,6 +11,7 @@ using Integration.Shared.Mappers;
 using Integration.Shared.Observability;
 using Integration.Shared.Repositories;
 using Integration.Shared.Services;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly.CircuitBreaker;
@@ -36,6 +37,12 @@ public class HanaOutboxDispatcher
     private readonly IOptions<HansaCrmConfig> _hansaConfig;
     private readonly ILogger<HanaOutboxDispatcher> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
+
+    /// <summary>
+    /// Name of the HANA server this dispatcher is polling (multi-HANA).
+    /// Informational only — used to identify the server in log messages.
+    /// </summary>
+    public string ServerName { get; set; } = "default";
 
     public HanaOutboxDispatcher(
         HanaOutboxRepository hanaRepo,
@@ -91,7 +98,7 @@ public class HanaOutboxDispatcher
         }
         else
         {
-            _logger.LogInformation("Processing {Count} outbox events from HANA", leasedBatch.Count);
+            _logger.LogInformation("Processing {Count} outbox events from HANA server {ServerName}", leasedBatch.Count, ServerName);
         }
 
         // Accumulate logs during the cycle and flush in a single batch at the end.
@@ -125,7 +132,11 @@ public class HanaOutboxDispatcher
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var dispatcher = scope.ServiceProvider.GetRequiredService<HanaOutboxDispatcher>();
+                // Reuse this cycle's HANA repository so each event is marked in the same
+                // server it was read from. Resolving the dispatcher from scoped DI would
+                // inject the default-server repository (multi-HANA bug).
+                var dispatcher = ActivatorUtilities.CreateInstance<HanaOutboxDispatcher>(scope.ServiceProvider, _hanaRepo);
+                dispatcher.ServerName = ServerName;
                 await dispatcher.ProcessEventAsync(evt, pendingLogs, ct);
 
                 if (_config.Value.RateLimitDelayMs > 0)

@@ -84,6 +84,8 @@ builder.Services.AddSingleton(sp =>
     var logger = sp.GetRequiredService<ILogger<HanaConnectionPool>>();
     return new HanaConnectionPool(hanaConfig.ConnectionString, maxSize: 5, logger);
 });
+// Registry of all configured HANA servers for multi-HANA outbox polling
+builder.Services.AddSingleton<HanaConnectionPoolRegistry>();
 
 // ============================================================================
 // HTTP Clients + Resilience (Polly v8) — isolated per-tenant pipelines

@@ -100,7 +100,13 @@ Editar `appsettings.json` en API y Worker:
     "Password": "***"
   },
   "Hana": {
-    "ConnectionString": "Driver={HDBODBC};SERVERNODE=host:30015;..."
+    "ConnectionString": "Driver={HDBODBC};SERVERNODE=host:30015;...",
+    "Connections": [
+      {
+        "Name": "hanaroda25",
+        "ConnectionString": "Driver={HDBODBC};SERVERNODE=otro-host:30015;..."
+      }
+    ]
   },
   "Postgres": {
     "ConnectionString": "Host=localhost;Port=5434;Database=integration_bus;..."
@@ -136,6 +142,11 @@ Activar/desactivar flujos por tenant sin redeploy. Dashboard UI con toggles visu
 
 ### 3. Multi-tenant Routing
 Cada tenant puede apuntar a su propia instancia SAP y CRM vía `TenantConfig` en PostgreSQL.
+
+### 3.1 Multi-HANA Outbox Polling
+El Worker puede monitorear varios servidores HANA a la vez: el `ConnectionString` principal actúa como servidor "default" y cada entrada de `Hana.Connections` agrega un servidor nombrado con su propio pool de conexiones (`HanaConnectionPoolRegistry`). Cada ciclo del `OutboxDispatcherWorker` itera todos los servidores; un servidor caído no detiene el polling de los demás. El tenant se resuelve por el `TENANT_ID` de cada evento, por lo que un mismo tenant puede tener eventos en cualquiera de los servidores.
+
+> **Nota timezone:** el lease (`LEASED_UNTIL`) se escribe en UTC desde la app, pero HANA lo compara contra `CURRENT_TIMESTAMP` (hora local del servidor HANA). Si el servidor HANA no está en UTC, un evento leased tarda ese desfase extra en volver a ser elegible tras un crash. No afecta el flujo normal (procesado/fallido limpia el lease de inmediato).
 
 ### 4. Idempotencia Centralizada
 Registro persistente `(TenantId, EventType, AggregateId)` evita duplicados en retries. TTL 30 días con cleanup automático.

@@ -17,6 +17,11 @@ Este archivo contiene contexto específico para agents que trabajen en este code
 - No usar `SYSUUID()` en INSERTs parametrizados — generar UUID en C#.
 - Usar Dapper para queries; EF solo para PostgreSQL.
 
+### Multi-HANA
+- El outbox polling soporta varios servidores HANA: `Hana.ConnectionString` (default) + `Hana.Connections` (nombrados). `HanaConnectionPoolRegistry` mantiene un pool por servidor.
+- `HanaOutboxDispatcher` recibe su `HanaOutboxRepository` por `ActivatorUtilities` (nunca desde DI scoped, que inyecta el repo del servidor default). Al agregar procesamiento por evento, mantener ese patrón.
+- `LEASED_UNTIL` se escribe en UTC (`DateTime.UtcNow`) pero HANA lo compara con `CURRENT_TIMESTAMP` (hora local del servidor HANA). En servidores HANA fuera de UTC hay un desfase en la expiración del lease — conocido, no afecta el flujo normal.
+
 ### Serialización SAP
 - SAP Service Layer requiere **PascalCase** exacto.
 - Usar `PropertyNamingPolicy = null` en `JsonSerializerOptions`.

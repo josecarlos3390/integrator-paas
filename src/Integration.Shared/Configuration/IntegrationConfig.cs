@@ -11,6 +11,21 @@ public class SapConfig
 
 public class HanaConfig
 {
+    /// <summary>
+    /// Default (legacy) connection string. Always polled by the worker.
+    /// </summary>
+    public string ConnectionString { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Additional HANA servers polled by the outbox dispatcher (multi-HANA support).
+    /// Events carry their own TENANT_ID, so routing is resolved downstream per event.
+    /// </summary>
+    public List<HanaConnectionConfig> Connections { get; set; } = new();
+}
+
+public class HanaConnectionConfig
+{
+    public string Name { get; set; } = string.Empty;
     public string ConnectionString { get; set; } = string.Empty;
 }
 

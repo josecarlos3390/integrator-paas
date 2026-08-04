@@ -1,5 +1,6 @@
 using System.Threading;
 using Integration.Shared.Configuration;
+using Integration.Shared.Infrastructure;
 using Integration.Shared.Observability;
 using Integration.Shared.Repositories;
 using Integration.Worker.Dispatchers;
@@ -45,7 +46,6 @@ public class OutboxDispatcherWorker : BackgroundService
             {
                 // Create a new scope per cycle so DbContext and repositories are fresh
                 using var scope = _scopeFactory.CreateScope();
-                var dispatcher = scope.ServiceProvider.GetRequiredService<HanaOutboxDispatcher>();
 
                 // Create a combined CTS so the current cycle can be
                 // cancelled if the host requests shutdown.
@@ -54,7 +54,30 @@ public class OutboxDispatcherWorker : BackgroundService
                 var previousCts = Interlocked.Exchange(ref _cycleCts, newCts);
                 previousCts?.Dispose();
 
-                await dispatcher.RunCycleAsync(_cycleCts.Token);
+                // Poll every configured HANA server. Events carry TENANT_ID,
+                // so a failure in one server must not stop the others.
+                var registry = scope.ServiceProvider.GetRequiredService<HanaConnectionPoolRegistry>();
+                var outboxOptions = scope.ServiceProvider.GetRequiredService<IOptions<OutboxConfig>>();
+                var repoLogger = scope.ServiceProvider.GetRequiredService<ILogger<HanaOutboxRepository>>();
+
+                foreach (var (serverName, pool) in registry.GetAll())
+                {
+                    try
+                    {
+                        var repo = new HanaOutboxRepository(pool, outboxOptions, repoLogger);
+                        var dispatcher = ActivatorUtilities.CreateInstance<HanaOutboxDispatcher>(scope.ServiceProvider, repo);
+                        dispatcher.ServerName = serverName;
+                        await dispatcher.RunCycleAsync(_cycleCts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Unhandled exception in OutboxDispatcherWorker cycle for HANA server {ServerName}", serverName);
+                    }
+                }
 
                 // Flush runtime metrics to PostgreSQL so the API dashboard can read them
                 try
