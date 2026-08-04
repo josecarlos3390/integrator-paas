@@ -44,11 +44,10 @@ public class VendorBankAlertController : ControllerBase
         var inserted = 0;
         var skipped = 0;
         var skip = 0;
-        const int pageSize = 100;
 
         while (true)
         {
-            var (items, hasMore) = await sapClient.GetVendorBankInfoPageAsync(skip, pageSize, ct);
+            var (items, hasMore) = await sapClient.GetVendorBankInfoPageAsync(skip, ct);
             if (items.Count == 0) break;
 
             foreach (var bp in items)
@@ -74,7 +73,7 @@ public class VendorBankAlertController : ControllerBase
             }
 
             if (!hasMore) break;
-            skip += pageSize;
+            skip += items.Count;
         }
 
         _logger.LogInformation("Vendor bank baseline backfill for tenant {TenantId}: {Inserted} upserted, {Skipped} skipped (overwrite={Overwrite})",

@@ -111,13 +111,14 @@ public class ServiceLayerClient
 
     /// <summary>
     /// Gets a page of suppliers with their bank fields (baseline backfill).
-    /// Returns the items and whether more pages are available (odata.nextLink).
+    /// Service Layer caps pages at 20 records server-side and ignores $top,
+    /// so pagination must follow odata.nextLink: HasMore = nextLink present.
     /// </summary>
-    public async Task<(List<SapBusinessPartner> Items, bool HasMore)> GetVendorBankInfoPageAsync(int skip, int pageSize = 100, CancellationToken ct = default)
+    public async Task<(List<SapBusinessPartner> Items, bool HasMore)> GetVendorBankInfoPageAsync(int skip, CancellationToken ct = default)
     {
         await EnsureLoggedInAsync(ct);
 
-        var url = $"/b1s/v1/BusinessPartners?$filter=CardType eq 'cSupplier'&$select=CardCode,CardName,CardType,DefaultBankCode,DefaultBranch,DefaultAccount,IBAN&$top={pageSize}&$skip={skip}";
+        var url = $"/b1s/v1/BusinessPartners?$filter=CardType eq 'cSupplier'&$select=CardCode,CardName,CardType,DefaultBankCode,DefaultBranch,DefaultAccount,IBAN&$skip={skip}";
         var response = await _httpClient.GetAsync(url, ct);
 
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
@@ -137,7 +138,7 @@ public class ServiceLayerClient
             if (bp is not null) items.Add(bp);
         }
 
-        var hasMore = result.TryGetProperty("odata.nextLink", out _) && items.Count == pageSize;
+        var hasMore = result.TryGetProperty("odata.nextLink", out _);
         return (items, hasMore);
     }
 
