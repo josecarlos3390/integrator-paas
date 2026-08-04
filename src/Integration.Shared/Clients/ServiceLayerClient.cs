@@ -89,7 +89,7 @@ public class ServiceLayerClient
     {
         await EnsureLoggedInAsync(ct);
 
-        var url = $"/b1s/v1/BusinessPartners('{Uri.EscapeDataString(cardCode)}')?$select=CardCode,CardName,CardType,DefaultBankCode,DefaultBranch,DefaultAccount,IBAN";
+        var url = $"/b1s/v1/BusinessPartners('{Uri.EscapeDataString(cardCode)}')?$select=CardCode,CardName,CardType,DefaultBankCode,DefaultBranch,DefaultAccount,IBAN,BPBankAccounts";
         var response = await _httpClient.GetAsync(url, ct);
 
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
@@ -118,7 +118,7 @@ public class ServiceLayerClient
     {
         await EnsureLoggedInAsync(ct);
 
-        var url = $"/b1s/v1/BusinessPartners?$filter=CardType eq 'cSupplier'&$select=CardCode,CardName,CardType,DefaultBankCode,DefaultBranch,DefaultAccount,IBAN&$skip={skip}";
+        var url = $"/b1s/v1/BusinessPartners?$filter=CardType eq 'cSupplier'&$select=CardCode,CardName,CardType,DefaultBankCode,DefaultBranch,DefaultAccount,IBAN,BPBankAccounts&$skip={skip}";
         var response = await _httpClient.GetAsync(url, ct);
 
         if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)

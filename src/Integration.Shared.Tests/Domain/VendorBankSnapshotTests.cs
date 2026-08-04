@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Integration.Shared.Domain;
+using Integration.Shared.Dtos;
 using Xunit;
 
 namespace Integration.Shared.Tests.Domain;
@@ -53,6 +54,50 @@ public class VendorBankSnapshotTests
             Iban = null
         };
 
-        snapshot.Signature.Should().Be(VendorBankSnapshot.BuildSignature("BG_MN", null, "1310714788", null));
+        // Full signature = header fields + "//" + accounts collection signature (empty when null)
+        snapshot.Signature.Should().Be(VendorBankSnapshot.BuildSignature("BG_MN", null, "1310714788", null) + "//");
+    }
+
+    [Fact]
+    public void BuildAccountsSignature_SortsRowsAndDropsEmpty()
+    {
+        var accounts = new List<SapBPBankAccount>
+        {
+            new() { BankCode = null, AccountNo = null }, // empty row, dropped
+            new() { BankCode = "BUN_MN", AccountNo = "111" },
+            new() { BankCode = "BCP_MN", AccountNo = "222" }
+        };
+
+        var sig = VendorBankSnapshot.BuildAccountsSignature(accounts);
+
+        sig.Should().Be("BCP_MN||222|;BUN_MN||111|");
+    }
+
+    [Fact]
+    public void BuildAccountsSignature_ChangesWhenAccountAdded()
+    {
+        var before = new List<SapBPBankAccount> { new() { BankCode = "BUN_MN", AccountNo = "111" } };
+        var after = new List<SapBPBankAccount>
+        {
+            new() { BankCode = "BUN_MN", AccountNo = "111" },
+            new() { BankCode = "BCP_MN", AccountNo = "222" }
+        };
+
+        VendorBankSnapshot.BuildAccountsSignature(before)
+            .Should().NotBe(VendorBankSnapshot.BuildAccountsSignature(after));
+    }
+
+    [Fact]
+    public void BuildAccountsSignature_OrderIndependent()
+    {
+        var a = new List<SapBPBankAccount>
+        {
+            new() { BankCode = "BUN_MN", AccountNo = "111" },
+            new() { BankCode = "BCP_MN", AccountNo = "222" }
+        };
+        var b = a.AsEnumerable().Reverse().ToList();
+
+        VendorBankSnapshot.BuildAccountsSignature(a)
+            .Should().Be(VendorBankSnapshot.BuildAccountsSignature(b));
     }
 }

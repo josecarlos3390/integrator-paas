@@ -14,6 +14,14 @@ public class VendorBankSnapshot
     public string? Branch { get; set; }
     public string? AccountNo { get; set; }
     public string? Iban { get; set; }
+
+    /// <summary>
+    /// Canonical signature of the vendor's bank accounts collection (OCRB):
+    /// normalized "bank|branch|account|iban" rows, sorted, joined with ';'.
+    /// Detects added/removed/modified accounts, not just the default one.
+    /// </summary>
+    public string? AccountsSignature { get; set; }
+
     public DateTime UpdatedAt { get; set; }
 
     /// <summary>
@@ -29,5 +37,19 @@ public class VendorBankSnapshot
         return $"{bank}|{N(branch)}|{N(accountNo)}|{N(iban)}";
     }
 
-    public string Signature => BuildSignature(BankCode, Branch, AccountNo, Iban);
+    /// <summary>
+    /// Builds the canonical signature of a bank accounts collection
+    /// (rows normalized like BuildSignature, empty rows dropped, sorted).
+    /// </summary>
+    public static string BuildAccountsSignature(IEnumerable<Dtos.SapBPBankAccount> accounts)
+    {
+        var rows = accounts
+            .Select(a => BuildSignature(a.BankCode, a.Branch, a.AccountNo, a.IBAN))
+            .Where(s => s != "|||")
+            .OrderBy(s => s, StringComparer.Ordinal);
+        return string.Join(";", rows);
+    }
+
+    /// <summary>Full signature: header default bank fields + accounts collection.</summary>
+    public string Signature => BuildSignature(BankCode, Branch, AccountNo, Iban) + "//" + (AccountsSignature ?? string.Empty);
 }

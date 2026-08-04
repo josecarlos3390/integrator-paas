@@ -36,6 +36,7 @@ public class VendorBankSnapshotRepository
             existing.Branch = snapshot.Branch;
             existing.AccountNo = snapshot.AccountNo;
             existing.Iban = snapshot.Iban;
+            existing.AccountsSignature = snapshot.AccountsSignature;
             existing.UpdatedAt = snapshot.UpdatedAt;
         }
         else
@@ -60,6 +61,7 @@ public class VendorBankSnapshotRepository
                 existing.Branch = snapshot.Branch;
                 existing.AccountNo = snapshot.AccountNo;
                 existing.Iban = snapshot.Iban;
+                existing.AccountsSignature = snapshot.AccountsSignature;
                 existing.UpdatedAt = snapshot.UpdatedAt;
             }
             else

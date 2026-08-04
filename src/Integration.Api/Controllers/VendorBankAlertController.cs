@@ -67,6 +67,7 @@ public class VendorBankAlertController : ControllerBase
                     Branch = bp.DefaultBranch,
                     AccountNo = bp.DefaultAccount,
                     Iban = bp.IBAN,
+                    AccountsSignature = VendorBankSnapshot.BuildAccountsSignature(bp.BPBankAccounts),
                     UpdatedAt = DateTime.UtcNow
                 }, ct);
                 inserted++;

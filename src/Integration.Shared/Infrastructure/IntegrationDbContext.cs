@@ -207,6 +207,7 @@ public class IntegrationDbContext : DbContext
             entity.Property(e => e.Branch).HasMaxLength(64);
             entity.Property(e => e.AccountNo).HasMaxLength(128);
             entity.Property(e => e.Iban).HasMaxLength(128);
+            entity.Property(e => e.AccountsSignature).HasMaxLength(2000);
         });
     }
 }

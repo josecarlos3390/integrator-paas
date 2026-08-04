@@ -57,6 +57,8 @@ Este archivo contiene contexto específico para agents que trabajen en este code
 ### VENDOR_BANK_ALERT (alerta anti-fraude)
 - `OBJECT_TYPE='VENDOR_BANK_ALERT'` en el outbox HANA = flujo de alerta, **no** sync al CRM. El SP solo encola proveedores (`CardType='S'`) y manda `UserSign2` en el `PAYLOAD` (`{"userSign": N}`).
 - Detección por snapshot propio (`vendor_bank_snapshots`): sin baseline se aprende en silencio, nunca se alerta en la primera vista.
+- La firma compara la **colección completa OCRB** (`accounts_signature`: filas `banco|sucursal|cuenta|iban` normalizadas y ordenadas), no solo la cuenta por defecto del encabezado — detecta cuentas agregadas/eliminadas/modificadas.
+- VENDOR_BANK_ALERT **bypassea la guarda de idempotencia** en `HanaOutboxDispatcher`: la idempotencia llavea por tenant+objectType+aggregateId y descartaría todos los updates posteriores al primero del mismo proveedor. Es comparación de estado, no procesamiento de documento.
 - Telegram (`TelegramNotifier`) es fire-and-forget: nunca lanza excepción; un fallo solo se loguea.
 - Baseline inicial: `POST /api/admin/vendor-bank/baseline?tenantId=X`. Las rutas `/api/admin/**` NO pasan por `ApiKeyMiddleware` — el tenant siempre va explícito por query param.
 

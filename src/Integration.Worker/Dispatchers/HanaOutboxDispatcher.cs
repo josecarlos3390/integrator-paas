@@ -254,33 +254,14 @@ public class HanaOutboxDispatcher
             var sapClient = await _clientFactory.GetSapClientAsync(evt.TenantId);
             var crmClient = await _clientFactory.GetCrmConnectorAsync(evt.TenantId);
 
-            var idempotencyResult = await _idempotencyService.TryProcessAsync(
-                evt.TenantId, evt.ObjectType, evt.AggregateId,
-                async () =>
-                {
-                    switch (evt.ObjectType)
-                    {
-                        case "2": // BusinessPartners
-                            await ProcessBusinessPartnerAsync(evt, sapClient, crmClient, correlationId, ct);
-                            break;
-                        case "13": // Invoices
-                            await ProcessInvoiceAsync(evt, sapClient, crmClient, correlationId, ct);
-                            break;
-                        case "PRICE_LIST": // Price Lists (polling-based)
-                            await ProcessPriceListAsync(evt, crmClient, correlationId, ct);
-                            break;
-                        case "PRICE_LIST_HEADER": // Price List headers (OPLN)
-                            await ProcessPriceListHeaderAsync(evt, crmClient, correlationId, ct);
-                            break;
-                        case "VENDOR_BANK_ALERT": // Vendor bank account watch (anti-fraud)
-                            await ProcessVendorBankAlertAsync(evt, sapClient, ct);
-                            break;
-                        default:
-                            _logger.LogWarning("Unknown object type {ObjectType} for event {EventId}", evt.ObjectType, evt.Id);
-                            await _hanaRepo.MarkProcessedAsync(evt.Id, ct);
-                            break;
-                    }
-                }, ct);
+            // VENDOR_BANK_ALERT events are state comparisons, not one-shot documents:
+            // every vendor update must be evaluated. The idempotency guard (keyed by
+            // tenant+objectType+aggregateId) would swallow all updates but the first.
+            var idempotencyResult = evt.ObjectType == "VENDOR_BANK_ALERT"
+                ? await ProcessByObjectTypeAsync(evt, sapClient, crmClient, correlationId, ct)
+                : await _idempotencyService.TryProcessAsync(
+                    evt.TenantId, evt.ObjectType, evt.AggregateId,
+                    async () => await ProcessByObjectTypeAsync(evt, sapClient, crmClient, correlationId, ct), ct);
 
             if (idempotencyResult == IdempotencyResult.AlreadyProcessed)
             {
@@ -458,6 +439,39 @@ public class HanaOutboxDispatcher
     }
 
     /// <summary>
+    /// Routes the event to its handler by object type. Extracted so the
+    /// idempotency guard can be bypassed for state-comparison flows.
+    /// </summary>
+    private async Task<IdempotencyResult> ProcessByObjectTypeAsync(
+        HanaOutboxEvent evt, ServiceLayerClient sapClient, ICrmConnector crmClient, string correlationId, CancellationToken ct)
+    {
+        switch (evt.ObjectType)
+        {
+            case "2": // BusinessPartners
+                await ProcessBusinessPartnerAsync(evt, sapClient, crmClient, correlationId, ct);
+                break;
+            case "13": // Invoices
+                await ProcessInvoiceAsync(evt, sapClient, crmClient, correlationId, ct);
+                break;
+            case "PRICE_LIST": // Price Lists (polling-based)
+                await ProcessPriceListAsync(evt, crmClient, correlationId, ct);
+                break;
+            case "PRICE_LIST_HEADER": // Price List headers (OPLN)
+                await ProcessPriceListHeaderAsync(evt, crmClient, correlationId, ct);
+                break;
+            case "VENDOR_BANK_ALERT": // Vendor bank account watch (anti-fraud)
+                await ProcessVendorBankAlertAsync(evt, sapClient, ct);
+                break;
+            default:
+                _logger.LogWarning("Unknown object type {ObjectType} for event {EventId}", evt.ObjectType, evt.Id);
+                await _hanaRepo.MarkProcessedAsync(evt.Id, ct);
+                break;
+        }
+
+        return IdempotencyResult.Processed;
+    }
+
+    /// <summary>
     /// VENDOR_BANK_ALERT flow: compares the vendor's current bank account in SAP
     /// against the stored snapshot. On a real change, sends an anti-fraud alert
     /// via Telegram and updates the snapshot (the new value becomes the baseline).
@@ -479,7 +493,8 @@ public class HanaOutboxDispatcher
         }
 
         var snapshot = await _vendorBankRepo.GetAsync(evt.TenantId, cardCode, ct);
-        var currentSignature = VendorBankSnapshot.BuildSignature(bp.DefaultBankCode, bp.DefaultBranch, bp.DefaultAccount, bp.IBAN);
+        var currentSignature = VendorBankSnapshot.BuildSignature(bp.DefaultBankCode, bp.DefaultBranch, bp.DefaultAccount, bp.IBAN)
+            + "//" + VendorBankSnapshot.BuildAccountsSignature(bp.BPBankAccounts);
         var newSnapshot = new VendorBankSnapshot
         {
             TenantId = evt.TenantId,
@@ -489,6 +504,7 @@ public class HanaOutboxDispatcher
             Branch = bp.DefaultBranch,
             AccountNo = bp.DefaultAccount,
             Iban = bp.IBAN,
+            AccountsSignature = VendorBankSnapshot.BuildAccountsSignature(bp.BPBankAccounts),
             UpdatedAt = DateTime.UtcNow
         };
 
@@ -517,8 +533,8 @@ public class HanaOutboxDispatcher
         var message =
             $"⚠️ <b>Cambio de cuenta bancaria de proveedor</b>\n" +
             $"Proveedor: {cardCode} - {bp.CardName}\n" +
-            $"Cuenta anterior: {FormatBankAccount(snapshot.BankCode, snapshot.Branch, snapshot.AccountNo, snapshot.Iban)}\n" +
-            $"Cuenta nueva: {FormatBankAccount(bp.DefaultBankCode, bp.DefaultBranch, bp.DefaultAccount, bp.IBAN)}\n" +
+            $"Cuentas anteriores: {FormatAccountsSignature(snapshot.AccountsSignature)}\n" +
+            $"Cuentas nuevas: {FormatAccountsSignature(newSnapshot.AccountsSignature)}\n" +
             $"Usuario SAP: {userName}\n" +
             $"Tenant: {evt.TenantId}";
 
@@ -554,6 +570,27 @@ public class HanaOutboxDispatcher
             .Where(p => !string.IsNullOrWhiteSpace(p) && p != "-1")
             .ToArray();
         return parts.Length == 0 ? "(sin cuenta)" : string.Join(" / ", parts);
+    }
+
+    /// <summary>
+    /// Renders a stored accounts signature ("bank|branch|account|iban;...") as
+    /// human-readable "bank / account, ..." for the Telegram message.
+    /// </summary>
+    private static string FormatAccountsSignature(string? accountsSignature)
+    {
+        if (string.IsNullOrWhiteSpace(accountsSignature)) return "(sin cuentas)";
+
+        var rows = accountsSignature.Split(';', StringSplitOptions.RemoveEmptyEntries)
+            .Select(row =>
+            {
+                var parts = row.Split('|');
+                return FormatBankAccount(
+                    parts.ElementAtOrDefault(0),
+                    parts.ElementAtOrDefault(1),
+                    parts.ElementAtOrDefault(2),
+                    parts.ElementAtOrDefault(3));
+            });
+        return string.Join(", ", rows);
     }
 
     private async Task HandleDeadLetterAsync(HanaOutboxEvent evt, string correlationId, string errorMessage, long durationMs, ConcurrentBag<IntegrationLog>? pendingLogs, CancellationToken ct)

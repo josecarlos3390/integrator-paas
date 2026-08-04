@@ -255,7 +255,7 @@ public class SapBPBankAccount
     public string? ZipCode { get; set; }
     public string? County { get; set; }
     public string? State { get; set; }
-    public string? LogInstance { get; set; }
+    public int? LogInstance { get; set; }
 }
 
 public class SapBPFiscalTaxID
