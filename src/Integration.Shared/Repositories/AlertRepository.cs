@@ -93,10 +93,13 @@ public class AlertRepository
         await _dbContext.SaveChangesAsync(ct);
     }
 
-    public async Task<object> GetStatsAsync(CancellationToken ct = default)
+    public async Task<object> GetStatsAsync(string? tenantId = null, CancellationToken ct = default)
     {
-        var active = await _dbContext.Alerts.AsNoTracking()
-            .Where(a => !a.IsAcknowledged)
+        var query = _dbContext.Alerts.AsNoTracking().Where(a => !a.IsAcknowledged);
+        if (!string.IsNullOrWhiteSpace(tenantId))
+            query = query.Where(a => a.TenantId == tenantId);
+
+        var active = await query
             .GroupBy(a => a.Severity)
             .Select(g => new { Severity = g.Key, Count = g.Count() })
             .ToListAsync(ct);

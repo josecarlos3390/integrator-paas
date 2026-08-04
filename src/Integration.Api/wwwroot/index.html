@@ -165,10 +165,10 @@
         <!-- TAB 1: Dashboard -->
         <div id="tab-dashboard" class="tab-content active">
             <!-- Sección 1: Cola de Outbox HANA -->
-            <div class="section-title">📦 Cola de Outbox SAP HANA</div>
-            <div class="section-desc">Estado actual de los eventos pendientes en SAP HANA. Se actualiza en tiempo real cada 5 segundos.</div>
+            <div class="section-title">📦 Outbox SAP HANA</div>
+            <div class="section-desc">Eventos registrados en el outbox de SAP HANA. La tabla conserva el historial ya procesado (no se borra), por eso el total incluye procesados. Se actualiza cada 5 segundos.</div>
             <div class="stats" id="stats">
-                <div class="stat-card total"><h3>Total en Cola</h3><div class="value">-</div></div>
+                <div class="stat-card total"><h3>Total Eventos</h3><div class="value">-</div></div>
                 <div class="stat-card pending"><h3>Pendientes</h3><div class="value">-</div></div>
                 <div class="stat-card processed"><h3>Ya Procesados</h3><div class="value">-</div></div>
                 <div class="stat-card failed"><h3>Con Error</h3><div class="value">-</div></div>
@@ -204,11 +204,13 @@
                 <div class="filters">
                     <select id="objectTypeFilter">
                         <option value="">Todos los documentos</option>
-                        <option value="2">BusinessPartners (2)</option>
-                        <option value="4">Items (4)</option>
-                        <option value="13">Invoices (13)</option>
-                        <option value="17">Orders (17)</option>
+                        <option value="2">BusinessPartners (obj. 2)</option>
+                        <option value="4">Items (obj. 4)</option>
+                        <option value="13">Invoices (obj. 13)</option>
+                        <option value="17">Orders (obj. 17)</option>
                         <option value="PRICE_LIST">Price Lists</option>
+                        <option value="PRICE_LIST_HEADER">Price Lists (cabecera)</option>
+                        <option value="VENDOR_BANK_ALERT">Alertas bancarias (proveedores)</option>
                     </select>
                     <select id="eventTypeFilter">
                         <option value="">Todas las ops</option>
@@ -837,7 +839,7 @@
 
         // Alertas
         async function loadAlertStats() {
-            const data = await fetchJson(`${ADMIN_BASE}/alerts/stats`);
+            const data = await fetchJson(withTenant(`${ADMIN_BASE}/alerts/stats`));
             const badge = document.getElementById('alertCountBadge');
             if (data && data.totalActive > 0) {
                 badge.textContent = data.totalActive;
@@ -852,7 +854,7 @@
             if (page) paginationState.alerts.page = page;
             paginationState.alerts.pageSize = parseInt(document.getElementById('alertsPageSize').value);
             const { page: p, pageSize: ps } = paginationState.alerts;
-            const data = await fetchJson(`${ADMIN_BASE}/alerts?active=true&page=${p}&pageSize=${ps}`);
+            const data = await fetchJson(withTenant(`${ADMIN_BASE}/alerts?active=true&page=${p}&pageSize=${ps}`));
             const tbody = document.querySelector('#alertsTable tbody');
             if (!data || !data.items || data.items.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" class="empty">No hay alertas activas</td></tr>';

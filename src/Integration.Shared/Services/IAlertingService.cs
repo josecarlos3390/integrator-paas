@@ -22,5 +22,5 @@ public interface IAlertingService
     Task AcknowledgeAlertAsync(Guid alertId, string? acknowledgedBy, CancellationToken ct = default);
     Task<(IReadOnlyList<IntegrationAlert> Items, int TotalCount)> GetActiveAlertsAsync(string? tenantId = null, int skip = 0, int take = 25, CancellationToken ct = default);
     Task<(IReadOnlyList<IntegrationAlert> Items, int TotalCount)> GetRecentAlertsAsync(string? tenantId = null, int skip = 0, int take = 25, CancellationToken ct = default);
-    Task<object> GetStatsAsync(CancellationToken ct = default);
+    Task<object> GetStatsAsync(string? tenantId = null, CancellationToken ct = default);
 }

@@ -92,8 +92,8 @@ public class AlertingService : IAlertingService
     public Task<(IReadOnlyList<IntegrationAlert> Items, int TotalCount)> GetRecentAlertsAsync(string? tenantId = null, int skip = 0, int take = 25, CancellationToken ct = default)
         => _alertRepo.GetRecentAsync(tenantId, skip, take, ct);
 
-    public Task<object> GetStatsAsync(CancellationToken ct = default)
-        => _alertRepo.GetStatsAsync(ct);
+    public Task<object> GetStatsAsync(string? tenantId = null, CancellationToken ct = default)
+        => _alertRepo.GetStatsAsync(tenantId, ct);
 
     private async Task SendWebhookAsync(IntegrationAlert alert, CancellationToken ct = default)
     {

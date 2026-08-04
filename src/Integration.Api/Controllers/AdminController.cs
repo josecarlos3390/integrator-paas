@@ -191,9 +191,9 @@ public class AdminController : ControllerBase
     }
 
     [HttpGet("alerts/stats")]
-    public async Task<IActionResult> GetAlertStats(CancellationToken ct = default)
+    public async Task<IActionResult> GetAlertStats([FromQuery] string? tenantId, CancellationToken ct = default)
     {
-        var stats = await _alertingService.GetStatsAsync(ct);
+        var stats = await _alertingService.GetStatsAsync(tenantId, ct);
         return Ok(stats);
     }
 
