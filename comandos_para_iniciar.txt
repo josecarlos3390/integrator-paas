@@ -1,14 +1,62 @@
+============================================================
+COMANDOS PARA INICIAR EL INTEGRADOR (instalacion nativa, sin Docker)
+Servidor: SRVGLPI01 - Windows Server 2016
+============================================================
+
+--- Servicios de infraestructura (ya son servicios de Windows,
+    arrancan solos con el servidor; solo verificar) ---
+
+PostgreSQL 16   : servicio "postgresql-x64-16"  (puerto 5434)
+RabbitMQ        : servicio "RabbitMQ"           (puertos 5672 / 15672)
+Seq             : servicio "Seq"                (puerto 5341)
+
+Para verificar su estado (PowerShell):
+  Get-Service postgresql-x64-16, RabbitMQ, Seq
+
+Para iniciarlos si estuvieran detenidos (PowerShell como admin):
+  Start-Service postgresql-x64-16
+  Start-Service RabbitMQ
+  Start-Service Seq
+
+
+--- Integrador: API y Worker (MANUAL por ahora) ---
+
+Abrir DOS consolas (cmd o PowerShell), una para cada proceso:
+
+Consola 1 - API (puerto 5000):
+  cd C:\ProyectosPython\integrator-paas
+  dotnet run --project src\Integration.Api
+
+Consola 2 - Worker:
+  cd C:\ProyectosPython\integrator-paas
+  dotnet run --project src\Integration.Worker
+
+NOTA: ambos procesos mueren al cerrar la consola o la sesion.
+Pendiente: convertirlos en servicios de Windows.
+
+
+--- Verificacion rapida ---
+
+API viva:        curl http://localhost:5000/health/live
+API lista:       curl http://localhost:5000/health/ready
+RabbitMQ admin:  http://localhost:15672  (guest / guest)
+Seq logs:        http://localhost:5341
+
+
+--- Comandos utiles del flujo VENDOR_BANK_ALERT ---
+
+Backfill/reset baseline de proveedores (tenant RETAIL):
+  curl -X POST "http://localhost:5000/api/admin/vendor-bank/baseline?tenantId=RETAIL"
+  (agregar &overwrite=true para resetear todos los baselines)
+
+
+============================================================
+MODO DOCKER (legado, no usado en este servidor)
+============================================================
+
 para resetear el docker:
 docker-compose down -v
-
 
 para iniciar docker:
 docker-compose up postgres rabbitmq seq
 docker-compose up -d
-
-para iniciar Integration.API:
-dotnet run --project src\Integration.Api
-
-para iniciar Integration.Worder:
-dotnet run --project src\Integration.Worker
-
