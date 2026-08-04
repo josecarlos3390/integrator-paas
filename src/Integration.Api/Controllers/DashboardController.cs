@@ -286,16 +286,26 @@ public class DashboardController : ControllerBase
     {
         try
         {
-            // Find the event in HANA to get the AggregateId
-            var (events, _) = await _hanaRepo.FetchAllAsync(take: 1, ct: ct);
-            var evt = events.FirstOrDefault(e => e.Id == eventId);
+            // The event can live on any configured HANA server; locate it by ID.
+            foreach (var (serverName, pool) in _hanaRegistry.GetAll())
+            {
+                try
+                {
+                    var repo = CreateServerRepo(pool);
+                    var evt = await repo.GetByIdAsync(eventId, ct);
+                    if (evt == null) continue;
 
-            if (evt == null)
-                return NotFound(new { Message = "Event not found in HANA" });
+                    // Reset for retry on the server where the event was found
+                    await repo.ResetForRetryAsync(evt.AggregateId, ct);
+                    return Ok(new { Message = "Event queued for retry", EventId = eventId, AggregateId = evt.AggregateId, HanaServer = serverName });
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "RetryEvent: failed to query HANA server {Server}", serverName);
+                }
+            }
 
-            // Reset for retry
-            await _hanaRepo.ResetForRetryAsync(evt.AggregateId, ct);
-            return Ok(new { Message = "Event queued for retry", EventId = eventId, AggregateId = evt.AggregateId });
+            return NotFound(new { Message = "Event not found in HANA" });
         }
         catch (Exception ex)
         {

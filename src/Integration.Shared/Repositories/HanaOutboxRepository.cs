@@ -261,6 +261,32 @@ public class HanaOutboxRepository
         await lease.Connection.ExecuteAsync(sql, new { Id = id, TenantId = tenantId, AggregateId = aggregateId, Payload = payload });
     }
 
+    /// <summary>
+    /// Fetches a single event by its ID. Used by the dashboard retry endpoint
+    /// to locate the event (and its server) before resetting it.
+    /// </summary>
+    public async Task<HanaOutboxEvent?> GetByIdAsync(string id, CancellationToken ct = default)
+    {
+        const string sql = @"
+            SELECT
+                ID,
+                TENANT_ID AS TenantId,
+                EVENT_TYPE AS EventType,
+                OBJECT_TYPE AS ObjectType,
+                AGGREGATE_ID AS AggregateId,
+                OCCURRED_AT AS OccurredAt,
+                PROCESSED_AT AS ProcessedAt,
+                ATTEMPT_COUNT AS AttemptCount,
+                ERROR_MESSAGE AS ErrorMessage,
+                IS_DEAD_LETTER AS IsDeadLetter
+            FROM INTEGRATION_BUS.OUTBOX_EVENTS
+            WHERE ID = ?;
+        ";
+
+        using var lease = await _pool.AcquireAsync(ct);
+        return await lease.Connection.QuerySingleOrDefaultAsync<HanaOutboxEvent>(sql, new { Id = id });
+    }
+
     public async Task<(IReadOnlyList<HanaOutboxEvent> Items, int TotalCount)> FetchAllAsync(
         string? eventType = null,
         string? objectType = null,
