@@ -352,6 +352,8 @@ public class HanaOutboxDispatcher
 
             if (evt.AttemptCount + 1 >= _config.Value.MaxAttempts)
             {
+                // Flag IS_DEAD_LETTER in HANA so DlqRetryWorker.ResetForRetryAsync can find and requeue it later
+                await _hanaRepo.MarkDeadLetterAsync(evt.Id, ex.Message, ct);
                 await PromoteToDeadLetterAsync(evt, correlationId, ex.Message, sw.ElapsedMilliseconds, pendingLogs, ct);
             }
 
@@ -852,6 +854,8 @@ public class HanaOutboxDispatcher
 
                 if (evt.AttemptCount + 1 >= _config.Value.MaxAttempts)
                 {
+                    // Flag IS_DEAD_LETTER in HANA so DlqRetryWorker.ResetForRetryAsync can find and requeue it later
+                    await _hanaRepo.MarkDeadLetterAsync(evt.Id, ex.Message, ct);
                     await PromoteToDeadLetterAsync(evt, correlationId, ex.Message, sw.ElapsedMilliseconds, pendingLogs, ct);
                 }
 

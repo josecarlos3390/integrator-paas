@@ -102,7 +102,8 @@ public class TenantClientFactory : ITenantClientFactory
         var httpClient = new HttpClient(pollyHandler)
         {
             BaseAddress = new Uri(sapConfig.ServiceLayerUrl),
-            Timeout = TimeSpan.FromSeconds(30)
+            // Generous timeout: the Service Layer can stall under load; Polly retries absorb it.
+            Timeout = TimeSpan.FromSeconds(90)
         };
         httpClient.DefaultRequestHeaders.Add("Accept", "application/json");
 

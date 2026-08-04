@@ -21,11 +21,15 @@ public static class ResiliencePolicies
             {
                 ShouldHandle = new PredicateBuilder<HttpResponseMessage>()
                     .Handle<HttpRequestException>()
+                    // TaskCanceledException = HttpClient.Timeout elapsed (slow/hung Service Layer).
+                    // Polly v8 does not retry cancellations tied to the caller's own token.
+                    .Handle<TaskCanceledException>()
                     .HandleResult(r =>
                         r.StatusCode == HttpStatusCode.RequestTimeout ||
                         r.StatusCode == HttpStatusCode.TooManyRequests ||
                         (int)r.StatusCode >= 500),
-                MaxRetryAttempts = 5,
+                // Bounded because each attempt can take up to the 90s HttpClient timeout.
+                MaxRetryAttempts = 3,
                 DelayGenerator = static args =>
                 {
                     var delay = TimeSpan.FromSeconds(Math.Pow(2, args.AttemptNumber))
