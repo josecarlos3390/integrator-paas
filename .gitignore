@@ -43,3 +43,6 @@ Thumbs.db
 
 # Instaladores descargados para despliegue en Windows Server (ver INSTALACION.md)
 .installers/
+
+# Published binaries for Windows Services (SRVGLPI01)
+.publish/

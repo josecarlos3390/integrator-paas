@@ -18,6 +18,9 @@ using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Run as a Windows Service when registered with sc.exe (no-op on console)
+builder.Services.AddWindowsService(options => options.ServiceName = "Integration.Api");
+
 // ============================================================================
 // Logging: Serilog → Seq
 // ============================================================================

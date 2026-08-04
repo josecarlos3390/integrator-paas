@@ -19,20 +19,34 @@ Para iniciarlos si estuvieran detenidos (PowerShell como admin):
   Start-Service Seq
 
 
---- Integrador: API y Worker (MANUAL por ahora) ---
+--- Integrador: API y Worker (SERVICIOS DE WINDOWS) ---
 
-Abrir DOS consolas (cmd o PowerShell), una para cada proceso:
+Integration.Api    : servicio "Integration.Api"     (puerto 5000, inicio automatico)
+Integration.Worker : servicio "Integration.Worker"  (inicio automatico)
 
-Consola 1 - API (puerto 5000):
-  cd C:\ProyectosPython\integrator-paas
-  dotnet run --project src\Integration.Api
+Ambos arrancan solos con el servidor y se reinician solos si fallan
+(3 reintentos, 60s entre cada uno). Los binarios que corren son los
+publicados en .publish\ (NO dotnet run desde src\).
 
-Consola 2 - Worker:
-  cd C:\ProyectosPython\integrator-paas
-  dotnet run --project src\Integration.Worker
+Para verificar su estado (PowerShell):
+  Get-Service Integration.Api, Integration.Worker
 
-NOTA: ambos procesos mueren al cerrar la consola o la sesion.
-Pendiente: convertirlos en servicios de Windows.
+Para reiniciarlos (PowerShell como admin):
+  Restart-Service Integration.Api
+  Restart-Service Integration.Worker
+
+Para instalarlos/desinstalarlos (PowerShell como admin):
+  powershell -ExecutionPolicy Bypass -File scripts\install-windows-services.ps1
+  powershell -ExecutionPolicy Bypass -File scripts\install-windows-services.ps1 -Uninstall
+
+IMPORTANTE - despues de un git pull con cambios de codigo:
+  dotnet publish src\Integration.Api -c Release -o .publish\Api
+  dotnet publish src\Integration.Worker -c Release -o .publish\Worker
+  Restart-Service Integration.Api
+  Restart-Service Integration.Worker
+
+Logs del integrador: Seq en http://localhost:5341 (los servicios no
+tienen consola, toda la traza va a Seq).
 
 
 --- Verificacion rapida ---

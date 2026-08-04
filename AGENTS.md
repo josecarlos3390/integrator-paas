@@ -73,6 +73,13 @@ Este archivo contiene contexto específico para agents que trabajen en este code
 - `OutboxDispatcherWorker` espera hasta 30s antes de forzar cancelación del ciclo actual.
 - No se inician nuevos ciclos después de recibir señal de stop.
 
+## Windows Services (SRVGLPI01)
+
+- API y Worker corren como servicios de Windows (`Integration.Api`, `Integration.Worker`), inicio automático + restart-on-failure. Binarios publicados en `.publish\Api` y `.publish\Worker`.
+- Instalar/reinstalar: `scripts\install-windows-services.ps1` (elevado; `-Uninstall` para quitar).
+- Tras un pull con cambios: `dotnet publish -c Release -o .publish\{Api,Worker}` + `Restart-Service`. Los servicios corren los binarios de `.publish\`, NO `dotnet run` desde `src\`.
+- Los proyectos usan `AddWindowsService()` (Microsoft.Extensions.Hosting.WindowsServices) — no quitar esa llamada.
+
 ## Docker
 
 - No ejecutar `git commit`, `git push` o mutaciones de git sin confirmación explícita del usuario.
