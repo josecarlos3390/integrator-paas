@@ -14,6 +14,8 @@
         .header-bar h1 { font-size: 22px; color: #1a1a2e; margin: 0; }
         .header-meta { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; font-size: 13px; color: #666; }
         .tenant-badge { background: #3498db; color: white; padding: 4px 10px; border-radius: 12px; font-weight: 600; }
+        .tenant-select-label { font-weight: 600; color: #555; }
+        #tenantSelect { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; background: white; }
         .connection-status { display: inline-flex; align-items: center; gap: 5px; }
         .connection-status.online::before { content: ''; display: inline-block; width: 8px; height: 8px; background: #27ae60; border-radius: 50%; }
         .connection-status.offline::before { content: ''; display: inline-block; width: 8px; height: 8px; background: #e74c3c; border-radius: 50%; }
@@ -68,6 +70,7 @@
         .badge-failed { background: #f8d7da; color: #721c24; }
         .badge-deadletter { background: #e2d4f0; color: #5a2d8a; }
         .badge-idempotency { background: #fff3cd; color: #856404; }
+        .badge-server { background: #e8f0fe; color: #1a56db; }
         .btn-retry { padding: 4px 8px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; }
         .btn-retry:hover { background: #c0392b; }
         .error-msg { color: #e74c3c; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -139,7 +142,11 @@
         <div class="header-bar">
             <h1>🔄 Integration Bus - Panel de Operaciones</h1>
             <div class="header-meta">
-                <span class="tenant-badge" id="tenantBadge">Cargando tenant...</span>
+                <label class="tenant-select-label" for="tenantSelect">Tenant:</label>
+                <select id="tenantSelect" onchange="onTenantChange()">
+                    <option value="">Cargando tenants...</option>
+                </select>
+                <span class="tenant-badge" id="tenantBadge">-</span>
                 <span class="connection-status online" id="connStatus">Conectado</span>
                 <span class="last-updated" id="lastUpdated">Actualizando...</span>
                 <span class="alert-badge" id="alertCountBadge" style="display:none;">0</span>
@@ -228,6 +235,7 @@
                     <thead>
                         <tr>
                             <th>Fecha</th>
+                            <th>Servidor</th>
                             <th>Doc</th>
                             <th>Op</th>
                             <th>Prioridad</th>
@@ -384,7 +392,7 @@
             </div>
         </div>
 
-        <!-- TAB 4: Alertas -->
+        <!-- TAB 5: Alertas -->
         <div id="tab-alerts" class="tab-content">
             <div class="section">
                 <div class="section-title">🚨 Alertas Operativas</div>
@@ -419,7 +427,10 @@
         const API_BASE = window.location.origin + '/api/dashboard';
         const ADMIN_BASE = window.location.origin + '/api/admin';
 
-        let currentTenantId = 'tenant-001';
+        // Selected tenant is the single source of truth: every panel sends it as ?tenantId=.
+        // Persisted in localStorage so it survives page reloads.
+        let currentTenantId = localStorage.getItem('dashboard.tenantId') || 'tenant-001';
+        let loadedTenants = [];
         let isConnected = true;
 
         const paginationState = {
@@ -449,6 +460,12 @@
             }
         }
 
+        // Appends the selected tenant to a dashboard API URL.
+        function withTenant(url) {
+            if (!currentTenantId) return url;
+            return url + (url.includes('?') ? '&' : '?') + 'tenantId=' + encodeURIComponent(currentTenantId);
+        }
+
         function updateConnectionStatus() {
             const el = document.getElementById('connStatus');
             if (isConnected) {
@@ -461,12 +478,53 @@
             document.getElementById('lastUpdated').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-ES');
         }
 
-        async function loadTenantInfo() {
-            const data = await fetchJson(`${API_BASE}/tenant-info`);
-            if (!data) return;
-            currentTenantId = data.tenantId;
-            const badge = document.getElementById('tenantBadge');
-            badge.textContent = `${data.name} (${data.tenantId})`;
+        // Loads the tenant list into the global header selector.
+        async function loadTenants() {
+            const data = await fetchJson(`${ADMIN_BASE}/tenants`);
+            const select = document.getElementById('tenantSelect');
+            if (!data || data.length === 0) {
+                select.innerHTML = `<option value="${currentTenantId}">${currentTenantId}</option>`;
+                syncTenantBadge();
+                return;
+            }
+            loadedTenants = data;
+            if (!loadedTenants.some(t => t.tenantId === currentTenantId)) {
+                currentTenantId = loadedTenants[0].tenantId;
+                localStorage.setItem('dashboard.tenantId', currentTenantId);
+            }
+            select.innerHTML = loadedTenants.map(t => `<option value="${t.tenantId}">${t.name} (${t.tenantId})</option>`).join('');
+            select.value = currentTenantId;
+            syncTenantBadge();
+        }
+
+        function syncTenantBadge() {
+            const t = loadedTenants.find(x => x.tenantId === currentTenantId);
+            document.getElementById('tenantBadge').textContent = t ? `${t.name} (${t.tenantId})` : currentTenantId;
+        }
+
+        function onTenantChange() {
+            currentTenantId = document.getElementById('tenantSelect').value;
+            localStorage.setItem('dashboard.tenantId', currentTenantId);
+            syncTenantBadge();
+            // Reset pagination so pages from the previous tenant don't linger
+            Object.values(paginationState).forEach(p => { p.page = 1; });
+            // Keep the feature-flags tenant selector in sync with the global one
+            const featureSelect = document.getElementById('featureTenantSelect');
+            if ([...featureSelect.options].some(o => o.value === currentTenantId)) {
+                featureSelect.value = currentTenantId;
+            }
+            refreshAllPanels();
+        }
+
+        function refreshAllPanels() {
+            loadStats();
+            loadMetrics();
+            loadEvents();
+            loadLogs();
+            loadIngestorRequests();
+            loadFeatureFlags();
+            loadAlertStats();
+            loadAlerts();
         }
 
         function renderPagination(containerId, page, pageSize, totalCount, onPageChange) {
@@ -512,7 +570,7 @@
 
         async function loadMetrics() {
             const hours = document.getElementById('metricsWindowSelect').value;
-            const data = await fetchJson(`${API_BASE}/metrics?hours=${hours}`);
+            const data = await fetchJson(withTenant(`${API_BASE}/metrics?hours=${hours}`));
             if (!data) return;
             const windowLabel = document.getElementById('metricsWindowLabel');
             if (windowLabel && data.windowHours) {
@@ -566,7 +624,7 @@
         }
 
         async function loadStats() {
-            const data = await fetchJson(`${API_BASE}/stats`);
+            const data = await fetchJson(withTenant(`${API_BASE}/stats`));
             if (!data) return;
             const cards = document.querySelectorAll('#stats .stat-card .value');
             cards[0].textContent = data.total ?? 0;
@@ -601,7 +659,7 @@
             paginationState.ingestor.pageSize = parseInt(document.getElementById('ingestPageSize').value);
             const { page: p, pageSize: ps } = paginationState.ingestor;
             const url = `${API_BASE}/ingestor/requests?page=${p}&pageSize=${ps}${status ? '&status=' + status : ''}${source ? '&sourceSystem=' + source : ''}${target ? '&targetSystem=' + target : ''}`;
-            const data = await fetchJson(url);
+            const data = await fetchJson(withTenant(url));
             const tbody = document.querySelector('#ingestorTable tbody');
             if (!data || !data.items || data.items.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="9" class="empty">No hay solicitudes</td></tr>';
@@ -639,10 +697,10 @@
             paginationState.events.pageSize = parseInt(document.getElementById('eventsPageSize').value);
             const { page: p, pageSize: ps } = paginationState.events;
             const url = `${API_BASE}/events?page=${p}&pageSize=${ps}${objectType ? '&objectType=' + objectType : ''}${type ? '&eventType=' + type : ''}${status ? '&status=' + status : ''}`;
-            const data = await fetchJson(url);
+            const data = await fetchJson(withTenant(url));
             const tbody = document.querySelector('#eventsTable tbody');
             if (!data || !data.items || data.items.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" class="empty">No hay eventos</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" class="empty">No hay eventos</td></tr>';
                 renderPagination('eventsPagination', p, ps, 0, 'loadEvents');
                 return;
             }
@@ -650,6 +708,7 @@
             tbody.innerHTML = data.items.map(evt => `
                 <tr>
                     <td>${new Date(evt.occurredAt).toLocaleString('es-ES')}</td>
+                    <td><span class="badge badge-server">${evt.hanaServer || '-'}</span></td>
                     <td><span class="badge badge-pending">${objectTypeLabels[evt.objectType] || evt.objectType}</span></td>
                     <td>${evt.eventType}</td>
                     <td><span class="badge badge-pending">${evt.priority || 0}</span></td>
@@ -674,7 +733,7 @@
             paginationState.logs.pageSize = parseInt(document.getElementById('logsPageSize').value);
             const { page: p, pageSize: ps } = paginationState.logs;
             const url = `${API_BASE}/logs?page=${p}&pageSize=${ps}${direction ? '&direction=' + direction : ''}${status ? '&status=' + status : ''}`;
-            const data = await fetchJson(url);
+            const data = await fetchJson(withTenant(url));
             const tbody = document.querySelector('#logsTable tbody');
             if (!data || !data.items || data.items.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="7" class="empty">No hay logs</td></tr>';
@@ -729,7 +788,6 @@
                 return;
             }
             select.innerHTML = data.map(t => `<option value="${t.tenantId}">${t.name} (${t.tenantId})</option>`).join('');
-            loadFeatureFlags();
         }
 
         async function loadFeatureFlags() {
@@ -841,17 +899,18 @@
             updateConnectionStatus();
         }, 5000);
 
-        // Carga inicial
-        loadTenantInfo();
-        loadStats();
-        loadMetrics();
-        loadEvents();
-        loadLogs();
-        loadIngestorRequests();
-        loadTenantsForFeatures();
-        loadAlertStats();
-        loadAlerts();
-        updateConnectionStatus();
+        // Carga inicial: primero el selector de tenant (fuente de verdad),
+        // luego todos los paneles ya filtrados por el tenant elegido.
+        (async () => {
+            await loadTenants();
+            await loadTenantsForFeatures();
+            const featureSelect = document.getElementById('featureTenantSelect');
+            if ([...featureSelect.options].some(o => o.value === currentTenantId)) {
+                featureSelect.value = currentTenantId;
+            }
+            refreshAllPanels();
+            updateConnectionStatus();
+        })();
     </script>
 </body>
 </html>

@@ -67,7 +67,7 @@ public class AlertingWorker : BackgroundService
         var from = DateTime.UtcNow.Subtract(window);
 
         // Get recent logs grouped by tenant
-        var recentLogs = await logRepo.GetRecentAsync(from, DateTime.UtcNow, 1000, ct);
+        var recentLogs = await logRepo.GetRecentAsync(from, DateTime.UtcNow, 1000, ct: ct);
         var grouped = recentLogs.GroupBy(l => l.TenantId);
 
         foreach (var tenantGroup in grouped)

@@ -267,6 +267,7 @@ public class HanaOutboxRepository
         string? status = null,
         int skip = 0,
         int take = 25,
+        string? tenantId = null,
         CancellationToken ct = default)
     {
         var whereClauses = new List<string>();
@@ -282,6 +283,14 @@ public class HanaOutboxRepository
         {
             whereClauses.Add("OBJECT_TYPE = ?");
             parameters.Add("ObjectType", objectType);
+        }
+
+        // NOTE: parameters must be added in the same order as the '?' placeholders
+        // in the final SQL (ODBC pseudo-positional mapping).
+        if (!string.IsNullOrWhiteSpace(tenantId))
+        {
+            whereClauses.Add("TENANT_ID = ?");
+            parameters.Add("TenantId", tenantId);
         }
 
         if (status == "pending")
@@ -323,28 +332,34 @@ public class HanaOutboxRepository
         return (results.ToList(), totalCount);
     }
 
-    public async Task<HanaOutboxStats> FetchStatsAsync(CancellationToken ct = default)
+    public async Task<HanaOutboxStats> FetchStatsAsync(string? tenantId = null, CancellationToken ct = default)
     {
-        const string totalSql = "SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS;";
-        const string processedSql = "SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS WHERE PROCESSED_AT IS NOT NULL;";
-        const string deadLetterSql = "SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS WHERE IS_DEAD_LETTER = 1;";
-        const string failedSql = @"
+        // Tenant filter is appended to each COUNT; kept out of CASE per HANA ODBC constraints.
+        var hasTenant = !string.IsNullOrWhiteSpace(tenantId);
+        var tenantAnd = hasTenant ? " AND TENANT_ID = ?" : "";
+        var tenantWhere = hasTenant ? " WHERE TENANT_ID = ?" : "";
+        var parameters = hasTenant ? new { TenantId = tenantId } : null;
+
+        var totalSql = $"SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS{tenantWhere};";
+        var processedSql = $"SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS WHERE PROCESSED_AT IS NOT NULL{tenantAnd};";
+        var deadLetterSql = $"SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS WHERE IS_DEAD_LETTER = 1{tenantAnd};";
+        var failedSql = $@"
             SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS
-            WHERE PROCESSED_AT IS NULL AND IS_DEAD_LETTER = 0 AND ATTEMPT_COUNT > 0;
+            WHERE PROCESSED_AT IS NULL AND IS_DEAD_LETTER = 0 AND ATTEMPT_COUNT > 0{tenantAnd};
         ";
-        const string pendingSql = @"
+        var pendingSql = $@"
             SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS
-            WHERE PROCESSED_AT IS NULL AND IS_DEAD_LETTER = 0 AND ATTEMPT_COUNT = 0;
+            WHERE PROCESSED_AT IS NULL AND IS_DEAD_LETTER = 0 AND ATTEMPT_COUNT = 0{tenantAnd};
         ";
 
         using var lease = await _pool.AcquireAsync(ct);
         var conn = lease.Connection;
 
-        var total = await conn.ExecuteScalarAsync<int>(totalSql);
-        var processed = await conn.ExecuteScalarAsync<int>(processedSql);
-        var deadLetter = await conn.ExecuteScalarAsync<int>(deadLetterSql);
-        var failed = await conn.ExecuteScalarAsync<int>(failedSql);
-        var pending = await conn.ExecuteScalarAsync<int>(pendingSql);
+        var total = await conn.ExecuteScalarAsync<int>(totalSql, parameters);
+        var processed = await conn.ExecuteScalarAsync<int>(processedSql, parameters);
+        var deadLetter = await conn.ExecuteScalarAsync<int>(deadLetterSql, parameters);
+        var failed = await conn.ExecuteScalarAsync<int>(failedSql, parameters);
+        var pending = await conn.ExecuteScalarAsync<int>(pendingSql, parameters);
 
         return new HanaOutboxStats
         {
@@ -387,4 +402,10 @@ public class HanaOutboxEvent
     public int IsDeadLetter { get; set; }
     public DateTime? LeasedUntil { get; set; }
     public int Priority { get; set; }
+
+    /// <summary>
+    /// Name of the HANA server this event was read from. Not a table column:
+    /// it is set in memory by multi-server dashboard queries.
+    /// </summary>
+    public string? HanaServer { get; set; }
 }

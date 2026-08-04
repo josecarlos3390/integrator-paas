@@ -85,6 +85,9 @@ builder.Services.AddSingleton(sp =>
     var logger = sp.GetRequiredService<ILogger<HanaConnectionPool>>();
     return new HanaConnectionPool(hanaConfig.ConnectionString, maxSize: 3, logger);
 });
+// Registry of all configured HANA servers (default + named connections).
+// Used by the dashboard to query/merge events from every server.
+builder.Services.AddSingleton<HanaConnectionPoolRegistry>();
 
 // ============================================================================
 // HTTP Clients + Resilience (Polly v8) — isolated per-tenant pipelines

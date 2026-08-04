@@ -39,6 +39,30 @@ public class DeadLetterRepository
         return (items, totalCount);
     }
 
+    /// <summary>
+    /// Dashboard query with optional tenant filter and pagination.
+    /// </summary>
+    public async Task<(IReadOnlyList<DeadLetterEvent> Items, int TotalCount)> GetRecentAsync(
+        string? tenantId = null,
+        int skip = 0,
+        int take = 25,
+        CancellationToken ct = default)
+    {
+        var query = _dbContext.DeadLetterEvents.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(tenantId))
+            query = query.Where(d => d.TenantId == tenantId);
+
+        var totalCount = await query.CountAsync(ct);
+        var items = await query
+            .OrderByDescending(d => d.DeadLetteredAt)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(ct);
+
+        return (items, totalCount);
+    }
+
     public async Task<DeadLetterEvent?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         return await _dbContext.DeadLetterEvents

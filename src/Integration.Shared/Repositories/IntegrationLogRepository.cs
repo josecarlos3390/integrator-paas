@@ -73,6 +73,7 @@ public class IntegrationLogRepository
         string? status = null,
         int skip = 0,
         int take = 25,
+        string? tenantId = null,
         CancellationToken ct = default)
     {
         var query = _dbContext.IntegrationLogs.AsNoTracking().AsQueryable();
@@ -82,6 +83,9 @@ public class IntegrationLogRepository
 
         if (!string.IsNullOrWhiteSpace(status))
             query = query.Where(l => l.Status == status);
+
+        if (!string.IsNullOrWhiteSpace(tenantId))
+            query = query.Where(l => l.TenantId == tenantId);
 
         var totalCount = await query.CountAsync(ct);
 
@@ -95,17 +99,23 @@ public class IntegrationLogRepository
     }
 
     /// <summary>
-    /// Gets logs in a date range (for alerting worker).
+    /// Gets logs in a date range (for alerting worker), optionally filtered by tenant.
     /// </summary>
     public async Task<IReadOnlyList<IntegrationLog>> GetRecentAsync(
         DateTime from,
         DateTime to,
         int take = 1000,
+        string? tenantId = null,
         CancellationToken ct = default)
     {
-        return await _dbContext.IntegrationLogs
+        var query = _dbContext.IntegrationLogs
             .AsNoTracking()
-            .Where(l => l.CreatedAt >= from && l.CreatedAt <= to)
+            .Where(l => l.CreatedAt >= from && l.CreatedAt <= to);
+
+        if (!string.IsNullOrWhiteSpace(tenantId))
+            query = query.Where(l => l.TenantId == tenantId);
+
+        return await query
             .OrderByDescending(l => l.CreatedAt)
             .Take(take)
             .ToListAsync(ct);

@@ -20,6 +20,7 @@ Este archivo contiene contexto específico para agents que trabajen en este code
 ### Multi-HANA
 - El outbox polling soporta varios servidores HANA: `Hana.ConnectionString` (default) + `Hana.Connections` (nombrados). `HanaConnectionPoolRegistry` mantiene un pool por servidor.
 - `HanaOutboxDispatcher` recibe su `HanaOutboxRepository` por `ActivatorUtilities` (nunca desde DI scoped, que inyecta el repo del servidor default). Al agregar procesamiento por evento, mantener ese patrón.
+- El dashboard (`DashboardController`) también consulta TODOS los servidores del registry para `events` y `stats` (merge en memoria, filtro opcional `?tenantId=`); un servidor caído solo loguea warning y contribuye 0/vacío. El repo por servidor se crea con `ActivatorUtilities` igual que en el dispatcher.
 - `LEASED_UNTIL` se escribe en UTC (`DateTime.UtcNow`) pero HANA lo compara con `CURRENT_TIMESTAMP` (hora local del servidor HANA). En servidores HANA fuera de UTC hay un desfase en la expiración del lease — conocido, no afecta el flujo normal.
 
 ### Serialización SAP

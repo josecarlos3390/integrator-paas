@@ -1,19 +1,25 @@
 using Integration.Shared.Domain;
+using Integration.Shared.Infrastructure;
 using Integration.Shared.Observability;
 using Integration.Shared.Repositories;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Integration.Api.Controllers;
 
 /// <summary>
 /// Operations dashboard to monitor the SAP↔CRM integration flow.
 /// Exposes REST endpoints consumed by the HTML/JS frontend.
+/// All read endpoints accept an optional ?tenantId= filter so each tenant
+/// can be viewed as an independent operations panel.
 /// </summary>
 [ApiController]
 [Route("api/dashboard")]
 public class DashboardController : ControllerBase
 {
     private readonly HanaOutboxRepository _hanaRepo;
+    private readonly HanaConnectionPoolRegistry _hanaRegistry;
+    private readonly IServiceProvider _serviceProvider;
     private readonly IntegrationLogRepository _logRepo;
     private readonly DeadLetterRepository _dlqRepo;
     private readonly MetricRepository _metricRepo;
@@ -23,6 +29,8 @@ public class DashboardController : ControllerBase
 
     public DashboardController(
         HanaOutboxRepository hanaRepo,
+        HanaConnectionPoolRegistry hanaRegistry,
+        IServiceProvider serviceProvider,
         IntegrationLogRepository logRepo,
         DeadLetterRepository dlqRepo,
         MetricRepository metricRepo,
@@ -31,6 +39,8 @@ public class DashboardController : ControllerBase
         ILogger<DashboardController> logger)
     {
         _hanaRepo = hanaRepo;
+        _hanaRegistry = hanaRegistry;
+        _serviceProvider = serviceProvider;
         _logRepo = logRepo;
         _dlqRepo = dlqRepo;
         _metricRepo = metricRepo;
@@ -64,12 +74,15 @@ public class DashboardController : ControllerBase
 
     /// <summary>
     /// Lists HANA outbox events with optional filters.
+    /// Events live in N HANA servers: all of them are queried and merged in memory.
+    /// A server that is down contributes nothing and does not fail the request.
     /// </summary>
     [HttpGet("events")]
     public async Task<IActionResult> GetEvents(
         [FromQuery] string? eventType = null,
         [FromQuery] string? objectType = null,
         [FromQuery] string? status = null,
+        [FromQuery] string? tenantId = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 25,
         CancellationToken ct = default)
@@ -79,7 +92,39 @@ public class DashboardController : ControllerBase
             page = Math.Max(1, page);
             pageSize = Math.Clamp(pageSize, 1, 100);
             var skip = (page - 1) * pageSize;
-            var (events, totalCount) = await _hanaRepo.FetchAllAsync(eventType, objectType, status, skip, pageSize, ct);
+
+            // Simplification: each server returns its first (skip + pageSize) rows
+            // (already ordered by OCCURRED_AT DESC) and the requested page is sliced
+            // from the merged list in memory. TotalCount is exact (sum of per-server counts).
+            var merged = new List<HanaOutboxEvent>();
+            var totalCount = 0;
+
+            foreach (var (serverName, pool) in _hanaRegistry.GetAll())
+            {
+                try
+                {
+                    var repo = CreateServerRepo(pool);
+                    var (items, count) = await repo.FetchAllAsync(eventType, objectType, status, 0, skip + pageSize, tenantId, ct);
+                    foreach (var evt in items)
+                    {
+                        evt.HanaServer = serverName;
+                    }
+                    merged.AddRange(items);
+                    totalCount += count;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // A down HANA server must not break the dashboard for the others.
+                    _logger.LogWarning(ex, "Failed to fetch outbox events from HANA server {ServerName}; continuing with the rest", serverName);
+                }
+            }
+
+            var events = merged
+                .OrderByDescending(e => e.OccurredAt)
+                .Skip(skip)
+                .Take(pageSize)
+                .ToList();
+
             return Ok(new { Items = events, TotalCount = totalCount, Page = page, PageSize = pageSize });
         }
         catch (Exception ex)
@@ -99,6 +144,7 @@ public class DashboardController : ControllerBase
     [HttpGet("metrics")]
     public async Task<IActionResult> GetMetrics(
         [FromQuery] int hours = 24,
+        [FromQuery] string? tenantId = null,
         CancellationToken ct = default)
     {
         try
@@ -108,12 +154,12 @@ public class DashboardController : ControllerBase
             var to = DateTime.UtcNow;
 
             // Business metrics from integration_logs (windowed)
-            var totalEvents = await _metricRepo.GetTotalEventsProcessedAsync(from, to, ct);
-            var statusCounts = await _metricRepo.GetStatusCountsAsync(from, to, ct);
-            var eventTypeCounts = await _metricRepo.GetEventTypeCountsAsync(from, to, ct);
-            var deadLetterCounts = await _metricRepo.GetDeadLetterCountsAsync(from, to, ct);
-            var retryCounts = await _metricRepo.GetRetryCountsAsync(from, to, ct);
-            var latencySummary = await _metricRepo.GetLatencyStatsAsync(from, to, 5000, ct);
+            var totalEvents = await _metricRepo.GetTotalEventsProcessedAsync(from, to, tenantId, ct);
+            var statusCounts = await _metricRepo.GetStatusCountsAsync(from, to, tenantId, ct);
+            var eventTypeCounts = await _metricRepo.GetEventTypeCountsAsync(from, to, tenantId, ct);
+            var deadLetterCounts = await _metricRepo.GetDeadLetterCountsAsync(from, to, tenantId, ct);
+            var retryCounts = await _metricRepo.GetRetryCountsAsync(from, to, tenantId, ct);
+            var latencySummary = await _metricRepo.GetLatencyStatsAsync(from, to, 5000, tenantId, ct);
 
             // Technical metrics from accumulated counters (totals since table creation)
             var counters = await _metricRepo.GetAllAsync(ct);
@@ -153,18 +199,37 @@ public class DashboardController : ControllerBase
     }
 
     /// <summary>
-    /// Gets event statistics from HANA.
+    /// Gets event statistics from HANA, summed across every configured server.
+    /// A server that is down contributes zero and does not fail the request.
     /// </summary>
     [HttpGet("stats")]
-    public async Task<IActionResult> GetStats(CancellationToken ct = default)
+    public async Task<IActionResult> GetStats([FromQuery] string? tenantId = null, CancellationToken ct = default)
     {
         try
         {
-            var stats = await _hanaRepo.FetchStatsAsync(ct);
+            var stats = new HanaOutboxStats();
+
+            foreach (var (serverName, pool) in _hanaRegistry.GetAll())
+            {
+                try
+                {
+                    var repo = CreateServerRepo(pool);
+                    var serverStats = await repo.FetchStatsAsync(tenantId, ct);
+                    stats.Total += serverStats.Total;
+                    stats.Pending += serverStats.Pending;
+                    stats.Processed += serverStats.Processed;
+                    stats.DeadLetter += serverStats.DeadLetter;
+                    stats.Failed += serverStats.Failed;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "Failed to fetch outbox stats from HANA server {ServerName}; continuing with the rest", serverName);
+                }
+            }
 
             // Add idempotency hits from the last 24h
             var from = DateTime.UtcNow.AddDays(-1);
-            var logs = await _logRepo.GetRecentAsync(from, DateTime.UtcNow, 1000, ct);
+            var logs = await _logRepo.GetRecentAsync(from, DateTime.UtcNow, 1000, tenantId, ct);
             var idempotencyHits = logs.Count(l => l.Status == "idempotency_hit");
 
             return Ok(new
@@ -191,6 +256,7 @@ public class DashboardController : ControllerBase
     public async Task<IActionResult> GetLogs(
         [FromQuery] string? direction = null,
         [FromQuery] string? status = null,
+        [FromQuery] string? tenantId = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 25,
         CancellationToken ct = default)
@@ -200,7 +266,7 @@ public class DashboardController : ControllerBase
             page = Math.Max(1, page);
             pageSize = Math.Clamp(pageSize, 1, 100);
             var skip = (page - 1) * pageSize;
-            var (logs, totalCount) = await _logRepo.GetRecentAsync(direction, status, skip, pageSize, ct);
+            var (logs, totalCount) = await _logRepo.GetRecentAsync(direction, status, skip, pageSize, tenantId, ct);
             return Ok(new { Items = logs, TotalCount = totalCount, Page = page, PageSize = pageSize });
         }
         catch (Exception ex)
@@ -243,17 +309,19 @@ public class DashboardController : ControllerBase
     /// </summary>
     [HttpGet("dead-letters")]
     public async Task<IActionResult> GetDeadLetters(
+        [FromQuery] string? tenantId = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 25,
         CancellationToken ct = default)
     {
         try
         {
-            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? "tenant-001";
+            // Explicit query param wins; fall back to the API-key tenant; otherwise unfiltered.
+            var effectiveTenantId = tenantId ?? HttpContext.Items["TenantId"]?.ToString();
             page = Math.Max(1, page);
             pageSize = Math.Clamp(pageSize, 1, 100);
             var skip = (page - 1) * pageSize;
-            var (events, totalCount) = await _dlqRepo.GetByTenantAsync(tenantId, skip, pageSize, ct);
+            var (events, totalCount) = await _dlqRepo.GetRecentAsync(effectiveTenantId, skip, pageSize, ct);
             return Ok(new { Items = events, TotalCount = totalCount, Page = page, PageSize = pageSize });
         }
         catch (Exception ex)
@@ -271,18 +339,19 @@ public class DashboardController : ControllerBase
         [FromQuery] string? status = null,
         [FromQuery] string? sourceSystem = null,
         [FromQuery] string? targetSystem = null,
+        [FromQuery] string? tenantId = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 25,
         CancellationToken ct = default)
     {
         try
         {
-            var tenantId = HttpContext.Items["TenantId"]?.ToString();
+            var effectiveTenantId = tenantId ?? HttpContext.Items["TenantId"]?.ToString();
             page = Math.Max(1, page);
             pageSize = Math.Clamp(pageSize, 1, 100);
             var skip = (page - 1) * pageSize;
             var (requests, totalCount) = await _requestRepo.GetRecentAsync(
-                tenantId, status, sourceSystem, targetSystem, skip, pageSize, ct);
+                effectiveTenantId, status, sourceSystem, targetSystem, skip, pageSize, ct);
             return Ok(new { Items = requests, TotalCount = totalCount, Page = page, PageSize = pageSize });
         }
         catch (Exception ex)
@@ -291,4 +360,12 @@ public class DashboardController : ControllerBase
             return StatusCode(500, new { Error = ex.Message });
         }
     }
+
+    /// <summary>
+    /// Builds a repository bound to a specific HANA server pool.
+    /// Never resolve HanaOutboxRepository from DI for non-default servers:
+    /// the scoped registration always carries the default pool.
+    /// </summary>
+    private HanaOutboxRepository CreateServerRepo(HanaConnectionPool pool)
+        => ActivatorUtilities.CreateInstance<HanaOutboxRepository>(_serviceProvider, pool);
 }

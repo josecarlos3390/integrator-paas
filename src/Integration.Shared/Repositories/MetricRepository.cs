@@ -62,51 +62,50 @@ public class MetricRepository
 
     // ========================================================================
     // API-side: windowed business metrics from integration_logs
+    // All aggregates accept an optional tenant filter.
     // ========================================================================
 
-    public async Task<long> GetTotalEventsProcessedAsync(DateTime from, DateTime to, CancellationToken ct = default)
+    public async Task<long> GetTotalEventsProcessedAsync(DateTime from, DateTime to, string? tenantId = null, CancellationToken ct = default)
     {
-        return await _dbContext.IntegrationLogs
-            .AsNoTracking()
-            .Where(l => l.CreatedAt >= from && l.CreatedAt <= to)
+        return await WindowedLogs(from, to, tenantId)
             .LongCountAsync(ct);
     }
 
-    public async Task<Dictionary<string, long>> GetStatusCountsAsync(DateTime from, DateTime to, CancellationToken ct = default)
+    public async Task<Dictionary<string, long>> GetStatusCountsAsync(DateTime from, DateTime to, string? tenantId = null, CancellationToken ct = default)
     {
-        return await _dbContext.IntegrationLogs
-            .AsNoTracking()
-            .Where(l => l.CreatedAt >= from && l.CreatedAt <= to)
+        return await WindowedLogs(from, to, tenantId)
             .GroupBy(l => l.Status)
             .Select(g => new { Status = g.Key, Count = g.LongCount() })
             .ToDictionaryAsync(x => x.Status, x => x.Count, ct);
     }
 
-    public async Task<Dictionary<string, long>> GetEventTypeCountsAsync(DateTime from, DateTime to, CancellationToken ct = default)
+    public async Task<Dictionary<string, long>> GetEventTypeCountsAsync(DateTime from, DateTime to, string? tenantId = null, CancellationToken ct = default)
     {
-        return await _dbContext.IntegrationLogs
-            .AsNoTracking()
-            .Where(l => l.CreatedAt >= from && l.CreatedAt <= to)
+        return await WindowedLogs(from, to, tenantId)
             .GroupBy(l => l.EventType)
             .Select(g => new { EventType = g.Key, Count = g.LongCount() })
             .ToDictionaryAsync(x => x.EventType, x => x.Count, ct);
     }
 
-    public async Task<Dictionary<string, long>> GetDeadLetterCountsAsync(DateTime from, DateTime to, CancellationToken ct = default)
+    public async Task<Dictionary<string, long>> GetDeadLetterCountsAsync(DateTime from, DateTime to, string? tenantId = null, CancellationToken ct = default)
     {
-        return await _dbContext.DeadLetterEvents
+        var query = _dbContext.DeadLetterEvents
             .AsNoTracking()
-            .Where(d => d.DeadLetteredAt >= from && d.DeadLetteredAt <= to)
+            .Where(d => d.DeadLetteredAt >= from && d.DeadLetteredAt <= to);
+
+        if (!string.IsNullOrWhiteSpace(tenantId))
+            query = query.Where(d => d.TenantId == tenantId);
+
+        return await query
             .GroupBy(d => d.EventType)
             .Select(g => new { EventType = g.Key, Count = g.LongCount() })
             .ToDictionaryAsync(x => x.EventType, x => x.Count, ct);
     }
 
-    public async Task<Dictionary<string, long>> GetRetryCountsAsync(DateTime from, DateTime to, CancellationToken ct = default)
+    public async Task<Dictionary<string, long>> GetRetryCountsAsync(DateTime from, DateTime to, string? tenantId = null, CancellationToken ct = default)
     {
-        return await _dbContext.IntegrationLogs
-            .AsNoTracking()
-            .Where(l => l.CreatedAt >= from && l.CreatedAt <= to && l.Status == "error")
+        return await WindowedLogs(from, to, tenantId)
+            .Where(l => l.Status == "error")
             .GroupBy(l => l.EventType)
             .Select(g => new { EventType = g.Key, Count = g.LongCount() })
             .ToDictionaryAsync(x => x.EventType, x => x.Count, ct);
@@ -120,11 +119,11 @@ public class MetricRepository
         DateTime from,
         DateTime to,
         int take = 5000,
+        string? tenantId = null,
         CancellationToken ct = default)
     {
-        var logs = await _dbContext.IntegrationLogs
-            .AsNoTracking()
-            .Where(l => l.CreatedAt >= from && l.CreatedAt <= to && l.DurationMs > 0)
+        var logs = await WindowedLogs(from, to, tenantId)
+            .Where(l => l.DurationMs > 0)
             .OrderByDescending(l => l.CreatedAt)
             .Take(take)
             .ToListAsync(ct);
@@ -147,6 +146,18 @@ public class MetricRepository
             };
         }
         return result;
+    }
+
+    private IQueryable<IntegrationLog> WindowedLogs(DateTime from, DateTime to, string? tenantId)
+    {
+        var query = _dbContext.IntegrationLogs
+            .AsNoTracking()
+            .Where(l => l.CreatedAt >= from && l.CreatedAt <= to);
+
+        if (!string.IsNullOrWhiteSpace(tenantId))
+            query = query.Where(l => l.TenantId == tenantId);
+
+        return query;
     }
 
     private static double Percentile(double[] sorted, double p)

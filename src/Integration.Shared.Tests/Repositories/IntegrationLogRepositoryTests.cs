@@ -40,4 +40,61 @@ public class IntegrationLogRepositoryTests
 
         count.Should().Be(0);
     }
+
+    [Fact]
+    public async Task GetRecentAsync_WithTenantFilter_ReturnsOnlyThatTenant()
+    {
+        await using var context = DbContextHelper.CreateInMemoryContext();
+        var repo = new IntegrationLogRepository(context);
+
+        var now = DateTime.UtcNow;
+        context.IntegrationLogs.AddRange(
+            new IntegrationLog { Id = Guid.NewGuid(), TenantId = "tenant-001", Status = "success", CreatedAt = now.AddMinutes(-5) },
+            new IntegrationLog { Id = Guid.NewGuid(), TenantId = "tenant-001", Status = "error", CreatedAt = now.AddMinutes(-3) },
+            new IntegrationLog { Id = Guid.NewGuid(), TenantId = "RETAIL", Status = "success", CreatedAt = now.AddMinutes(-1) }
+        );
+        await context.SaveChangesAsync();
+
+        var (items, totalCount) = await repo.GetRecentAsync(tenantId: "RETAIL");
+
+        totalCount.Should().Be(1);
+        items.Should().OnlyContain(l => l.TenantId == "RETAIL");
+    }
+
+    [Fact]
+    public async Task GetRecentAsync_WithoutTenantFilter_ReturnsAllTenants()
+    {
+        await using var context = DbContextHelper.CreateInMemoryContext();
+        var repo = new IntegrationLogRepository(context);
+
+        var now = DateTime.UtcNow;
+        context.IntegrationLogs.AddRange(
+            new IntegrationLog { Id = Guid.NewGuid(), TenantId = "tenant-001", Status = "success", CreatedAt = now },
+            new IntegrationLog { Id = Guid.NewGuid(), TenantId = "RETAIL", Status = "success", CreatedAt = now }
+        );
+        await context.SaveChangesAsync();
+
+        var (_, totalCount) = await repo.GetRecentAsync();
+
+        totalCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetRecentAsync_DateRangeWithTenantFilter_ReturnsOnlyThatTenant()
+    {
+        await using var context = DbContextHelper.CreateInMemoryContext();
+        var repo = new IntegrationLogRepository(context);
+
+        var now = DateTime.UtcNow;
+        context.IntegrationLogs.AddRange(
+            new IntegrationLog { Id = Guid.NewGuid(), TenantId = "tenant-001", Status = "idempotency_hit", CreatedAt = now.AddMinutes(-10) },
+            new IntegrationLog { Id = Guid.NewGuid(), TenantId = "RETAIL", Status = "idempotency_hit", CreatedAt = now.AddMinutes(-5) }
+        );
+        await context.SaveChangesAsync();
+
+        var logs = await repo.GetRecentAsync(now.AddHours(-1), now, tenantId: "tenant-001");
+
+        logs.Should().HaveCount(1);
+        logs.Should().OnlyContain(l => l.TenantId == "tenant-001");
+    }
 }
