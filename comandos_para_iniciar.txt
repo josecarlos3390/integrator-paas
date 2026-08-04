@@ -21,8 +21,13 @@ Para iniciarlos si estuvieran detenidos (PowerShell como admin):
 
 --- Integrador: API y Worker (SERVICIOS DE WINDOWS) ---
 
-Integration.Api    : servicio "Integration.Api"     (puerto 5000, inicio automatico)
+Integration.Api    : servicio "Integration.Api"     (puerto 5050, inicio automatico)
 Integration.Worker : servicio "Integration.Worker"  (inicio automatico)
+
+NOTA puerto: la API usa el 5050 porque el 5000 esta ocupado por
+SGE-Flask (Sistema Gestion Empleados, servicio NSSM). NO mover la API
+al 5000 sin antes migrar SGE. El panel se accede desde la red en:
+  http://10.0.8.16:5050/index.html
 
 Ambos arrancan solos con el servidor y se reinician solos si fallan
 (3 reintentos, 60s entre cada uno). Los binarios que corren son los
@@ -39,11 +44,11 @@ Para instalarlos/desinstalarlos (PowerShell como admin):
   powershell -ExecutionPolicy Bypass -File scripts\install-windows-services.ps1
   powershell -ExecutionPolicy Bypass -File scripts\install-windows-services.ps1 -Uninstall
 
-IMPORTANTE - despues de un git pull con cambios de codigo:
-  dotnet publish src\Integration.Api -c Release -o .publish\Api
-  dotnet publish src\Integration.Worker -c Release -o .publish\Worker
-  Restart-Service Integration.Api
-  Restart-Service Integration.Worker
+IMPORTANTE - despues de un git pull con cambios de codigo, redeploy
+completo con un solo script (PowerShell como admin):
+  powershell -ExecutionPolicy Bypass -File scripts\redeploy.ps1
+(detiene servicios, publica a .publish\, verifica firewall 5050 e
+inicia los servicios)
 
 Logs del integrador: Seq en http://localhost:5341 (los servicios no
 tienen consola, toda la traza va a Seq).
@@ -51,8 +56,8 @@ tienen consola, toda la traza va a Seq).
 
 --- Verificacion rapida ---
 
-API viva:        curl http://localhost:5000/health/live
-API lista:       curl http://localhost:5000/health/ready
+API viva:        curl http://localhost:5050/health/live
+API lista:       curl http://localhost:5050/health/ready
 RabbitMQ admin:  http://localhost:15672  (guest / guest)
 Seq logs:        http://localhost:5341
 
@@ -60,7 +65,7 @@ Seq logs:        http://localhost:5341
 --- Comandos utiles del flujo VENDOR_BANK_ALERT ---
 
 Backfill/reset baseline de proveedores (tenant RETAIL):
-  curl -X POST "http://localhost:5000/api/admin/vendor-bank/baseline?tenantId=RETAIL"
+  curl -X POST "http://localhost:5050/api/admin/vendor-bank/baseline?tenantId=RETAIL"
   (agregar &overwrite=true para resetear todos los baselines)
 
 

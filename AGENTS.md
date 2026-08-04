@@ -29,7 +29,7 @@ Este archivo contiene contexto específico para agents que trabajen en este code
 
 ### Refit
 - Rutas deben ser **absolutas** con leading `/`.
-- `BaseUrl` debe ser el host root (`http://localhost:5000`), no incluir path.
+- `BaseUrl` debe ser el host root (`http://localhost:5050`), no incluir path.
 - Refit 7.2.22 (actualizado desde 7.0.0 por GHSA-3hxg-fxwm-8gf7).
 
 ### Circuit Breaker
@@ -77,8 +77,9 @@ Este archivo contiene contexto específico para agents que trabajen en este code
 ## Windows Services (SRVGLPI01)
 
 - API y Worker corren como servicios de Windows (`Integration.Api`, `Integration.Worker`), inicio automático + restart-on-failure. Binarios publicados en `.publish\Api` y `.publish\Worker`.
+- **La API escucha en el puerto 5050** (`Urls` en `src/Integration.Api/appsettings.json`): el 5000 lo ocupa SGE-Flask (Sistema Gestión Empleados, servicio NSSM) — no mover la API al 5000 sin migrar SGE antes. `Crm.BaseUrl` apunta a `http://localhost:5050` en API y Worker.
 - Instalar/reinstalar: `scripts\install-windows-services.ps1` (elevado; `-Uninstall` para quitar).
-- Tras un pull con cambios: `dotnet publish -c Release -o .publish\{Api,Worker}` + `Restart-Service`. Los servicios corren los binarios de `.publish\`, NO `dotnet run` desde `src\`.
+- Tras un pull con cambios: `scripts\redeploy.ps1` (elevado) — detiene servicios, publica a `.publish\`, verifica el firewall del 5050 e inicia. Los servicios corren los binarios de `.publish\`, NO `dotnet run` desde `src\`.
 - Los proyectos usan `AddWindowsService()` (Microsoft.Extensions.Hosting.WindowsServices) — no quitar esa llamada.
 
 ## Docker
@@ -91,16 +92,16 @@ Este archivo contiene contexto específico para agents que trabajen en este code
 
 ```bash
 # Simular eventos
-curl -X POST "http://localhost:5000/api/test/simulate-invoice?docEntry=1234"
-curl -X POST "http://localhost:5000/api/test/simulate-customer?cardCode=C000004&eventType=CustomerCreated"
+curl -X POST "http://localhost:5050/api/test/simulate-invoice?docEntry=1234"
+curl -X POST "http://localhost:5050/api/test/simulate-customer?cardCode=C000004&eventType=CustomerCreated"
 
 # Health
-curl http://localhost:5000/health/live
-curl http://localhost:5000/health/ready
+curl http://localhost:5050/health/live
+curl http://localhost:5050/health/ready
 
 # Stats
-curl http://localhost:5000/api/dashboard/stats
-curl http://localhost:5000/api/admin/alerts/stats
+curl http://localhost:5050/api/dashboard/stats
+curl http://localhost:5050/api/admin/alerts/stats
 ```
 
 ## Estructura de DB
