@@ -42,6 +42,7 @@ builder.Services.Configure<IdempotencyConfig>(builder.Configuration.GetSection("
 builder.Services.Configure<TenantsConfig>(builder.Configuration.GetSection("Tenants"));
 builder.Services.Configure<IngestionConfig>(builder.Configuration.GetSection("Ingestion"));
 builder.Services.Configure<PriceListPollingConfig>(builder.Configuration.GetSection("PriceListPolling"));
+builder.Services.Configure<TelegramConfig>(builder.Configuration.GetSection("Telegram"));
 
 // ============================================================================
 // Observability: OpenTelemetry
@@ -134,6 +135,8 @@ builder.Services.AddScoped<TenantFeatureFlagRepository>();
 builder.Services.AddSingleton<ITenantFeatureService, TenantFeatureService>();
 builder.Services.AddScoped<PriceSnapshotRepository>();
 builder.Services.AddScoped<PollingCursorRepository>();
+builder.Services.AddScoped<VendorBankSnapshotRepository>();
+builder.Services.AddHttpClient<ITelegramNotifier, TelegramNotifier>();
 builder.Services.AddScoped<MetricRepository>();
 builder.Services.AddScoped<TenantQuotaRepository>();
 builder.Services.AddScoped<IntegrationRequestRepository>();

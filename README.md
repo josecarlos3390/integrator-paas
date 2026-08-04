@@ -165,6 +165,17 @@ Alertas en tiempo real (DLQ, circuit breaker) + monitoreo periódico de threshol
 ### 8. Graceful Shutdown
 El Worker espera hasta 30s a que el ciclo actual termine antes de morir.
 
+### 9. Alerta Anti-Fraude: Cambio de Cuenta Bancaria de Proveedor (VENDOR_BANK_ALERT)
+Flujo separado del sync CRM. El `SBO_SP_PostTransactionNotice` del servidor HANA encola eventos con `OBJECT_TYPE='VENDOR_BANK_ALERT'` solo cuando un **proveedor** (`CardType='S'`) se crea o actualiza, incluyendo el `UserSign2` en el `PAYLOAD`. El Worker:
+
+- Consulta los datos bancarios actuales en Service Layer (`DefaultBankCode`, `DefaultBranch`, `DefaultAccount`, `IBAN`).
+- Los compara contra el snapshot en `vendor_bank_snapshots` (PostgreSQL).
+- **Sin snapshot** (o evento `Created`) → aprende la línea base en silencio, sin notificar.
+- **Sin cambios** → descarta.
+- **Con cambio** → alerta por Telegram (proveedor, cuenta anterior → nueva, usuario SAP que lo hizo) y actualiza el snapshot como nueva línea base.
+
+La línea base inicial se carga con `POST /api/admin/vendor-bank/baseline?tenantId=X` (backfill de todos los proveedores; `overwrite=true` para resetear). Config en la sección `Telegram` del Worker (`Enabled`, `BotToken`, `ChatId`).
+
 ## 📡 Endpoints principales
 
 ### Dashboard / Operaciones
@@ -185,6 +196,7 @@ El Worker espera hasta 30s a que el ciclo actual termine antes de morir.
 | POST | `/api/admin/features/{tenantId}/{key}` | Toggle feature |
 | GET | `/api/admin/alerts` | Alertas activas |
 | POST | `/api/admin/alerts/{id}/acknowledge` | Acknowledge alerta |
+| POST | `/api/admin/vendor-bank/baseline?tenantId=&overwrite=` | Backfill/reset línea base cuentas bancarias de proveedores |
 
 ### Test / Simulación
 

@@ -41,7 +41,9 @@ public class HanaOutboxDispatcherTests
             Options.Create(new OutboxConfig { BatchSize = 10, MaxAttempts = 5, PollingSeconds = 5 }),
             Options.Create(new HansaCrmConfig()),
             NullLogger<HanaOutboxDispatcher>.Instance,
-            new Mock<IServiceScopeFactory>().Object);
+            new Mock<IServiceScopeFactory>().Object,
+            new Mock<VendorBankSnapshotRepository>(MockBehavior.Loose, null!).Object,
+            new Mock<ITelegramNotifier>().Object);
     }
 
     [Fact]

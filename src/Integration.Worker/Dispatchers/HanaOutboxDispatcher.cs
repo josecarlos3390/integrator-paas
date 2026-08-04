@@ -37,6 +37,8 @@ public class HanaOutboxDispatcher
     private readonly IOptions<HansaCrmConfig> _hansaConfig;
     private readonly ILogger<HanaOutboxDispatcher> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly VendorBankSnapshotRepository _vendorBankRepo;
+    private readonly ITelegramNotifier _telegramNotifier;
 
     /// <summary>
     /// Name of the HANA server this dispatcher is polling (multi-HANA).
@@ -56,7 +58,9 @@ public class HanaOutboxDispatcher
         IOptions<OutboxConfig> config,
         IOptions<HansaCrmConfig> hansaConfig,
         ILogger<HanaOutboxDispatcher> logger,
-        IServiceScopeFactory scopeFactory)
+        IServiceScopeFactory scopeFactory,
+        VendorBankSnapshotRepository vendorBankRepo,
+        ITelegramNotifier telegramNotifier)
     {
         _hanaRepo = hanaRepo;
         _clientFactory = clientFactory;
@@ -70,6 +74,8 @@ public class HanaOutboxDispatcher
         _hansaConfig = hansaConfig;
         _logger = logger;
         _scopeFactory = scopeFactory;
+        _vendorBankRepo = vendorBankRepo;
+        _telegramNotifier = telegramNotifier;
     }
 
     /// <summary>
@@ -266,6 +272,9 @@ public class HanaOutboxDispatcher
                         case "PRICE_LIST_HEADER": // Price List headers (OPLN)
                             await ProcessPriceListHeaderAsync(evt, crmClient, correlationId, ct);
                             break;
+                        case "VENDOR_BANK_ALERT": // Vendor bank account watch (anti-fraud)
+                            await ProcessVendorBankAlertAsync(evt, sapClient, ct);
+                            break;
                         default:
                             _logger.LogWarning("Unknown object type {ObjectType} for event {EventId}", evt.ObjectType, evt.Id);
                             await _hanaRepo.MarkProcessedAsync(evt.Id, ct);
@@ -446,6 +455,105 @@ public class HanaOutboxDispatcher
         // 4. Mark as processed in HANA
         await _hanaRepo.MarkProcessedAsync(evt.Id, ct);
         _logger.LogInformation("Event {EventId} processed successfully", evt.Id);
+    }
+
+    /// <summary>
+    /// VENDOR_BANK_ALERT flow: compares the vendor's current bank account in SAP
+    /// against the stored snapshot. On a real change, sends an anti-fraud alert
+    /// via Telegram and updates the snapshot (the new value becomes the baseline).
+    /// Events without snapshot learn the baseline silently (no false alarms).
+    /// </summary>
+    private async Task ProcessVendorBankAlertAsync(HanaOutboxEvent evt, ServiceLayerClient sapClient, CancellationToken ct)
+    {
+        var cardCode = evt.AggregateId;
+
+        // 1. Get current bank data from SAP
+        var bp = await sapClient.GetVendorBankInfoAsync(cardCode, ct);
+
+        // Only suppliers are relevant for this flow (the SP already filters, double-check here)
+        if (bp.CardType != "cSupplier")
+        {
+            _logger.LogInformation("Event {EventId}: {CardCode} is not a supplier ({CardType}). Skipping.", evt.Id, cardCode, bp.CardType);
+            await _hanaRepo.MarkProcessedAsync(evt.Id, ct);
+            return;
+        }
+
+        var snapshot = await _vendorBankRepo.GetAsync(evt.TenantId, cardCode, ct);
+        var currentSignature = VendorBankSnapshot.BuildSignature(bp.DefaultBankCode, bp.DefaultBranch, bp.DefaultAccount, bp.IBAN);
+        var newSnapshot = new VendorBankSnapshot
+        {
+            TenantId = evt.TenantId,
+            CardCode = cardCode,
+            CardName = bp.CardName,
+            BankCode = bp.DefaultBankCode,
+            Branch = bp.DefaultBranch,
+            AccountNo = bp.DefaultAccount,
+            Iban = bp.IBAN,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        // 2. No baseline (or vendor creation): learn silently, never alert on first sight
+        if (snapshot is null || evt.EventType == "Created")
+        {
+            await _vendorBankRepo.UpsertAsync(newSnapshot, ct);
+            await _hanaRepo.MarkProcessedAsync(evt.Id, ct);
+            _logger.LogInformation("Vendor bank baseline recorded for {CardCode} (tenant {TenantId})", cardCode, evt.TenantId);
+            return;
+        }
+
+        // 3. No bank change: discard silently
+        if (snapshot.Signature == currentSignature)
+        {
+            await _hanaRepo.MarkProcessedAsync(evt.Id, ct);
+            return;
+        }
+
+        // 4. Bank account changed: alert and update the baseline
+        var userSign = ExtractUserSign(evt.Payload);
+        var userName = userSign is not null
+            ? await sapClient.GetUserNameAsync(userSign.Value, ct) ?? $"desconocido (key {userSign})"
+            : "desconocido";
+
+        var message =
+            $"⚠️ <b>Cambio de cuenta bancaria de proveedor</b>\n" +
+            $"Proveedor: {cardCode} - {bp.CardName}\n" +
+            $"Cuenta anterior: {FormatBankAccount(snapshot.BankCode, snapshot.Branch, snapshot.AccountNo, snapshot.Iban)}\n" +
+            $"Cuenta nueva: {FormatBankAccount(bp.DefaultBankCode, bp.DefaultBranch, bp.DefaultAccount, bp.IBAN)}\n" +
+            $"Usuario SAP: {userName}\n" +
+            $"Tenant: {evt.TenantId}";
+
+        var sent = await _telegramNotifier.SendMessageAsync(message, ct);
+        if (!sent)
+        {
+            _logger.LogWarning("Telegram alert for vendor {CardCode} could not be sent (disabled or failed). Change: {Old} -> {New}",
+                cardCode, snapshot.Signature, currentSignature);
+        }
+
+        await _vendorBankRepo.UpsertAsync(newSnapshot, ct);
+        await _hanaRepo.MarkProcessedAsync(evt.Id, ct);
+        _logger.LogWarning("Vendor bank account changed for {CardCode} (tenant {TenantId}) by {User}. Alert sent: {Sent}",
+            cardCode, evt.TenantId, userName, sent);
+    }
+
+    private static int? ExtractUserSign(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(payload);
+            if (doc.RootElement.TryGetProperty("userSign", out var el) && el.TryGetInt32(out var userSign))
+                return userSign;
+        }
+        catch (JsonException) { /* malformed payload: user stays unknown */ }
+        return null;
+    }
+
+    private static string FormatBankAccount(string? bankCode, string? branch, string? accountNo, string? iban)
+    {
+        var parts = new[] { bankCode, branch, accountNo, iban }
+            .Where(p => !string.IsNullOrWhiteSpace(p) && p != "-1")
+            .ToArray();
+        return parts.Length == 0 ? "(sin cuenta)" : string.Join(" / ", parts);
     }
 
     private async Task HandleDeadLetterAsync(HanaOutboxEvent evt, string correlationId, string errorMessage, long durationMs, ConcurrentBag<IntegrationLog>? pendingLogs, CancellationToken ct)

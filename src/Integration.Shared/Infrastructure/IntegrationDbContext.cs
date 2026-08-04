@@ -25,6 +25,7 @@ public class IntegrationDbContext : DbContext
     public DbSet<IntegrationMetricCounter> MetricCounters => Set<IntegrationMetricCounter>();
     public DbSet<TenantQuota> TenantQuotas => Set<TenantQuota>();
     public DbSet<IntegrationRequest> IntegrationRequests => Set<IntegrationRequest>();
+    public DbSet<VendorBankSnapshot> VendorBankSnapshots => Set<VendorBankSnapshot>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -192,6 +193,20 @@ public class IntegrationDbContext : DbContext
             entity.HasIndex(e => new { e.TenantId, e.ExternalId, e.EntityType });
             entity.HasIndex(e => new { e.Status, e.LeasedUntil });
             entity.HasIndex(e => e.ReceivedAt);
+        });
+
+        // VendorBankSnapshot
+        modelBuilder.Entity<VendorBankSnapshot>(entity =>
+        {
+            entity.ToTable("vendor_bank_snapshots");
+            entity.HasKey(e => new { e.TenantId, e.CardCode });
+            entity.Property(e => e.TenantId).HasMaxLength(64);
+            entity.Property(e => e.CardCode).HasMaxLength(64);
+            entity.Property(e => e.CardName).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.BankCode).HasMaxLength(64);
+            entity.Property(e => e.Branch).HasMaxLength(64);
+            entity.Property(e => e.AccountNo).HasMaxLength(128);
+            entity.Property(e => e.Iban).HasMaxLength(128);
         });
     }
 }

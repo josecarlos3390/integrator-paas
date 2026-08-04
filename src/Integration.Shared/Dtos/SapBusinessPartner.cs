@@ -106,6 +106,8 @@ public class SapBusinessPartner
 
     // Banking
     public string? DefaultBankCode { get; set; }
+    public string? DefaultBranch { get; set; }
+    public string? DefaultAccount { get; set; }
     public string? HouseBank { get; set; }
     public string? HouseBankCountry { get; set; }
     public string? HouseBankAccount { get; set; }

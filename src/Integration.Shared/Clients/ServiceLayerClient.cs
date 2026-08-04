@@ -83,6 +83,95 @@ public class ServiceLayerClient
     }
 
     /// <summary>
+    /// Gets only the bank-related fields of a vendor (VENDOR_BANK_ALERT flow).
+    /// </summary>
+    public async Task<SapBusinessPartner> GetVendorBankInfoAsync(string cardCode, CancellationToken ct = default)
+    {
+        await EnsureLoggedInAsync(ct);
+
+        var url = $"/b1s/v1/BusinessPartners('{Uri.EscapeDataString(cardCode)}')?$select=CardCode,CardName,CardType,DefaultBankCode,DefaultBranch,DefaultAccount,IBAN";
+        var response = await _httpClient.GetAsync(url, ct);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _isLoggedIn = false;
+            await EnsureLoggedInAsync(ct);
+            response = await _httpClient.GetAsync(url, ct);
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            throw new SapIntegrationException($"Business Partner '{cardCode}' not found in SAP.", isBusinessError: true);
+        }
+
+        response.EnsureSuccessStatusCode();
+        var bp = await response.Content.ReadFromJsonAsync<SapBusinessPartner>(ct);
+        return bp ?? throw new SapIntegrationException($"Business Partner '{cardCode}' returned empty response.");
+    }
+
+    /// <summary>
+    /// Gets a page of suppliers with their bank fields (baseline backfill).
+    /// Returns the items and whether more pages are available (odata.nextLink).
+    /// </summary>
+    public async Task<(List<SapBusinessPartner> Items, bool HasMore)> GetVendorBankInfoPageAsync(int skip, int pageSize = 100, CancellationToken ct = default)
+    {
+        await EnsureLoggedInAsync(ct);
+
+        var url = $"/b1s/v1/BusinessPartners?$filter=CardType eq 'cSupplier'&$select=CardCode,CardName,CardType,DefaultBankCode,DefaultBranch,DefaultAccount,IBAN&$top={pageSize}&$skip={skip}";
+        var response = await _httpClient.GetAsync(url, ct);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _isLoggedIn = false;
+            await EnsureLoggedInAsync(ct);
+            response = await _httpClient.GetAsync(url, ct);
+        }
+
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+        var items = new List<SapBusinessPartner>();
+
+        foreach (var element in result.GetProperty("value").EnumerateArray())
+        {
+            var bp = element.Deserialize<SapBusinessPartner>();
+            if (bp is not null) items.Add(bp);
+        }
+
+        var hasMore = result.TryGetProperty("odata.nextLink", out _) && items.Count == pageSize;
+        return (items, hasMore);
+    }
+
+    /// <summary>
+    /// Resolves a SAP internal user key (OCRD.UserSign2) to a display name
+    /// via the Users entity. Returns null when the user cannot be resolved.
+    /// </summary>
+    public async Task<string?> GetUserNameAsync(int internalKey, CancellationToken ct = default)
+    {
+        await EnsureLoggedInAsync(ct);
+
+        var url = $"/b1s/v1/Users?$filter=InternalKey eq {internalKey}&$select=UserCode,UserName";
+        var response = await _httpClient.GetAsync(url, ct);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _isLoggedIn = false;
+            await EnsureLoggedInAsync(ct);
+            response = await _httpClient.GetAsync(url, ct);
+        }
+
+        if (!response.IsSuccessStatusCode) return null;
+
+        var result = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+        var value = result.GetProperty("value");
+        if (value.GetArrayLength() == 0) return null;
+
+        var user = value[0];
+        var name = user.TryGetProperty("UserName", out var n) ? n.GetString() : null;
+        var code = user.TryGetProperty("UserCode", out var c) ? c.GetString() : null;
+        return string.IsNullOrWhiteSpace(name) ? code : name;
+    }
+
+    /// <summary>
     /// Creates a sales order in SAP B1.
     /// </summary>
     public async Task<(int DocEntry, int DocNum)> CreateOrderAsync(SapOrderPayload payload, CancellationToken ct = default)

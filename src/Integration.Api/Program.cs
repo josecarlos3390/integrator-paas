@@ -130,6 +130,7 @@ builder.Services.AddScoped<TenantFeatureFlagRepository>();
 builder.Services.AddScoped<MetricRepository>();
 builder.Services.AddScoped<TenantQuotaRepository>();
 builder.Services.AddScoped<IntegrationRequestRepository>();
+builder.Services.AddScoped<VendorBankSnapshotRepository>();
 builder.Services.AddSingleton<ITenantFeatureService, TenantFeatureService>();
 builder.Services.AddMemoryCache();
 

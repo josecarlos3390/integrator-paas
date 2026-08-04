@@ -86,6 +86,17 @@ public class AlertingConfig
     public int CheckIntervalMinutes { get; set; } = 5;
 }
 
+/// <summary>
+/// Telegram Bot API settings for operational notifications
+/// (e.g. VENDOR_BANK_ALERT anti-fraud alerts).
+/// </summary>
+public class TelegramConfig
+{
+    public bool Enabled { get; set; } = false;
+    public string BotToken { get; set; } = string.Empty;
+    public string ChatId { get; set; } = string.Empty;
+}
+
 public class IdempotencyConfig
 {
     public bool Enabled { get; set; } = true;

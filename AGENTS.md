@@ -54,6 +54,12 @@ Este archivo contiene contexto específico para agents que trabajen en este code
 - Deduplicación por tipo+tenant en ventana de 30 minutos.
 - Webhook fire-and-forget (nunca bloquea el procesamiento).
 
+### VENDOR_BANK_ALERT (alerta anti-fraude)
+- `OBJECT_TYPE='VENDOR_BANK_ALERT'` en el outbox HANA = flujo de alerta, **no** sync al CRM. El SP solo encola proveedores (`CardType='S'`) y manda `UserSign2` en el `PAYLOAD` (`{"userSign": N}`).
+- Detección por snapshot propio (`vendor_bank_snapshots`): sin baseline se aprende en silencio, nunca se alerta en la primera vista.
+- Telegram (`TelegramNotifier`) es fire-and-forget: nunca lanza excepción; un fallo solo se loguea.
+- Baseline inicial: `POST /api/admin/vendor-bank/baseline?tenantId=X`. Las rutas `/api/admin/**` NO pasan por `ApiKeyMiddleware` — el tenant siempre va explícito por query param.
+
 ## Health Checks
 
 - `/health/live` — proceso vivo (sin verificación de dependencias)
@@ -101,3 +107,4 @@ curl http://localhost:5000/api/admin/alerts/stats
 | `processed_messages` | Idempotencia de RabbitMQ consumers |
 | `polling_cursors` | Marca de último ciclo de polling (price lists) |
 | `price_snapshots` | Memoria de precios para detectar cambios en ITM1 |
+| `vendor_bank_snapshots` | Línea base de cuentas bancarias de proveedores (flujo VENDOR_BANK_ALERT) |
