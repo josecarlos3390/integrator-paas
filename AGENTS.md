@@ -40,6 +40,24 @@ Este archivo contiene contexto específico para agents que trabajen en este code
 - `TenantClientFactory` es singleton que cachea `ServiceLayerClient` e `ICrmApiClient` por tenant usando `Lazy<Task<T>>` (AsyncLazy pattern). Todos los métodos son async.
 - Cada tenant tiene su propio `CookieContainer` para SAP.
 - Fallback a config global (`appsettings.json`) si el tenant no tiene valores propios.
+- El `TENANT_ID` del outbox debe coincidir con `tenant_config.tenant_id`. Para RETAIL_QA5 se usa `RETAIL_QA5` (mayúsculas); el bot compara case-insensitive pero la configuración debe ser consistente.
+
+### Bus de eventos SAP
+- El Worker publica `SapDomainEvent`, no `HanaOutboxEvent` crudo.
+- `SapDomainEventFactory` resuelve claves SAP y consulta Service Layer antes de publicar.
+- Tipos normalizados: `2` cliente, `4` artículo, `7` precios especiales, `13` factura. `17` pedido está pendiente.
+- Exchange `sap.events` es `topic`. Routing key: `{tenantId}.{objectType}.{eventType}`.
+- Cada consumidor usa una cola durable propia (`chatbot.sap.events`, `crm.sap.events`). No compartir colas.
+- No publicar movimientos de inventario; el stock se consulta por API con caché.
+- Caché de normalización: artículo 15 s, cliente 30 s, precios sin caché.
+- `Outbox:PublishObjectTypes` limita los tipos publicados.
+- Los consumidores deben ser idempotentes por `event_id`; el bot usa `sap_event_inbox`.
+
+### HANA multi-instancia
+- `hanaroda` y `hanaroda25` son servidores distintos. No usar una conexión HANA global para ambos.
+- Para el piloto se ejecuta un Worker por instancia; ver `docs/worker-por-instancia.md`.
+- No usar `SYSTEM` en producción: crear usuario HANA con `SELECT/UPDATE` sobre `INTEGRATION_BUS.OUTBOX_EVENTS`.
+- El connection string del Worker se puede sobrescribir con `Hana__ConnectionString`.
 
 ### Idempotencia
 - `IIdempotencyService.TryProcessAsync` envuelve TODO el procesamiento.

@@ -131,55 +131,23 @@ public class HanaOutboxRepository
         using var lease = await _pool.AcquireAsync(ct);
         var conn = lease.Connection;
 
-        if (idList.Count == 1)
-        {
-            const string singleSql = @"
-                UPDATE INTEGRATION_BUS.OUTBOX_EVENTS
-                SET LEASED_UNTIL = ?
-                WHERE ID = ?
-                  AND (LEASED_UNTIL IS NULL OR LEASED_UNTIL < CURRENT_TIMESTAMP);";
-
-            // Anonymous type: Dapper maps properties positionally for ODBC (declaration order).
-            // Passing object[] would be treated as multi-execute and crashes with InvalidProgramException.
-            var affected = await conn.ExecuteAsync(singleSql, new { LeasedUntil = leasedUntil, Id = idList[0] });
-            return affected > 0 ? idList : Array.Empty<string>();
-        }
-
-        // Batch UPDATE using IN clause with positional parameters for HANA ODBC.
-        // DynamicParameters preserves insertion order for ODBC pseudo-positional mapping.
-        var placeholders = string.Join(", ", idList.Select(_ => "?"));
-        var updateSql = $@"
+        // HANA ODBC + Dapper multi-execution can throw InvalidProgramException
+        // on some Windows driver/runtime combinations. Update one row at a time.
+        const string singleSql = @"
             UPDATE INTEGRATION_BUS.OUTBOX_EVENTS
             SET LEASED_UNTIL = ?
-            WHERE ID IN ({placeholders})
+            WHERE ID = ?
               AND (LEASED_UNTIL IS NULL OR LEASED_UNTIL < CURRENT_TIMESTAMP);";
 
-        var updateParams = new DynamicParameters();
-        updateParams.Add("LeasedUntil", leasedUntil);
-        for (var i = 0; i < idList.Count; i++)
+        var leased = new List<string>();
+        foreach (var id in idList)
         {
-            updateParams.Add($"Id{i}", idList[i]);
+            var affected = await conn.ExecuteAsync(
+                singleSql, new { LeasedUntil = leasedUntil, Id = id });
+            if (affected > 0)
+                leased.Add(id);
         }
-        var affectedTotal = await conn.ExecuteAsync(updateSql, updateParams);
-
-        if (affectedTotal == idList.Count)
-            return idList;
-
-        // Partial lease: determine which IDs were actually updated
-        var selectSql = $@"
-            SELECT ID FROM INTEGRATION_BUS.OUTBOX_EVENTS
-            WHERE ID IN ({placeholders})
-              AND LEASED_UNTIL = ?;";
-
-        var selectParams = new DynamicParameters();
-        for (var i = 0; i < idList.Count; i++)
-        {
-            selectParams.Add($"Id{i}", idList[i]);
-        }
-        selectParams.Add("LeasedUntil", leasedUntil);
-
-        var leasedIds = await conn.QueryAsync<string>(selectSql, selectParams);
-        return leasedIds.ToList();
+        return leased;
     }
 
     /// <summary>
@@ -196,7 +164,7 @@ public class HanaOutboxRepository
 
         using var lease = await _pool.AcquireAsync(ct);
         var leasedUntil = DateTime.UtcNow.Add(delay);
-        await lease.Connection.ExecuteAsync(sql, new { LeasedUntil = leasedUntil, Id = id });
+        await lease.Connection.ExecuteAsync(sql, new object[] { leasedUntil, id });
     }
 
     public async Task ResetForRetryAsync(string aggregateId, CancellationToken ct = default)
@@ -261,39 +229,12 @@ public class HanaOutboxRepository
         await lease.Connection.ExecuteAsync(sql, new { Id = id, TenantId = tenantId, AggregateId = aggregateId, Payload = payload });
     }
 
-    /// <summary>
-    /// Fetches a single event by its ID. Used by the dashboard retry endpoint
-    /// to locate the event (and its server) before resetting it.
-    /// </summary>
-    public async Task<HanaOutboxEvent?> GetByIdAsync(string id, CancellationToken ct = default)
-    {
-        const string sql = @"
-            SELECT
-                ID,
-                TENANT_ID AS TenantId,
-                EVENT_TYPE AS EventType,
-                OBJECT_TYPE AS ObjectType,
-                AGGREGATE_ID AS AggregateId,
-                OCCURRED_AT AS OccurredAt,
-                PROCESSED_AT AS ProcessedAt,
-                ATTEMPT_COUNT AS AttemptCount,
-                ERROR_MESSAGE AS ErrorMessage,
-                IS_DEAD_LETTER AS IsDeadLetter
-            FROM INTEGRATION_BUS.OUTBOX_EVENTS
-            WHERE ID = ?;
-        ";
-
-        using var lease = await _pool.AcquireAsync(ct);
-        return await lease.Connection.QuerySingleOrDefaultAsync<HanaOutboxEvent>(sql, new { Id = id });
-    }
-
     public async Task<(IReadOnlyList<HanaOutboxEvent> Items, int TotalCount)> FetchAllAsync(
         string? eventType = null,
         string? objectType = null,
         string? status = null,
         int skip = 0,
         int take = 25,
-        string? tenantId = null,
         CancellationToken ct = default)
     {
         var whereClauses = new List<string>();
@@ -309,14 +250,6 @@ public class HanaOutboxRepository
         {
             whereClauses.Add("OBJECT_TYPE = ?");
             parameters.Add("ObjectType", objectType);
-        }
-
-        // NOTE: parameters must be added in the same order as the '?' placeholders
-        // in the final SQL (ODBC pseudo-positional mapping).
-        if (!string.IsNullOrWhiteSpace(tenantId))
-        {
-            whereClauses.Add("TENANT_ID = ?");
-            parameters.Add("TenantId", tenantId);
         }
 
         if (status == "pending")
@@ -358,34 +291,28 @@ public class HanaOutboxRepository
         return (results.ToList(), totalCount);
     }
 
-    public async Task<HanaOutboxStats> FetchStatsAsync(string? tenantId = null, CancellationToken ct = default)
+    public async Task<HanaOutboxStats> FetchStatsAsync(CancellationToken ct = default)
     {
-        // Tenant filter is appended to each COUNT; kept out of CASE per HANA ODBC constraints.
-        var hasTenant = !string.IsNullOrWhiteSpace(tenantId);
-        var tenantAnd = hasTenant ? " AND TENANT_ID = ?" : "";
-        var tenantWhere = hasTenant ? " WHERE TENANT_ID = ?" : "";
-        var parameters = hasTenant ? new { TenantId = tenantId } : null;
-
-        var totalSql = $"SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS{tenantWhere};";
-        var processedSql = $"SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS WHERE PROCESSED_AT IS NOT NULL{tenantAnd};";
-        var deadLetterSql = $"SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS WHERE IS_DEAD_LETTER = 1{tenantAnd};";
-        var failedSql = $@"
+        const string totalSql = "SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS;";
+        const string processedSql = "SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS WHERE PROCESSED_AT IS NOT NULL;";
+        const string deadLetterSql = "SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS WHERE IS_DEAD_LETTER = 1;";
+        const string failedSql = @"
             SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS
-            WHERE PROCESSED_AT IS NULL AND IS_DEAD_LETTER = 0 AND ATTEMPT_COUNT > 0{tenantAnd};
+            WHERE PROCESSED_AT IS NULL AND IS_DEAD_LETTER = 0 AND ATTEMPT_COUNT > 0;
         ";
-        var pendingSql = $@"
+        const string pendingSql = @"
             SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS
-            WHERE PROCESSED_AT IS NULL AND IS_DEAD_LETTER = 0 AND ATTEMPT_COUNT = 0{tenantAnd};
+            WHERE PROCESSED_AT IS NULL AND IS_DEAD_LETTER = 0 AND ATTEMPT_COUNT = 0;
         ";
 
         using var lease = await _pool.AcquireAsync(ct);
         var conn = lease.Connection;
 
-        var total = await conn.ExecuteScalarAsync<int>(totalSql, parameters);
-        var processed = await conn.ExecuteScalarAsync<int>(processedSql, parameters);
-        var deadLetter = await conn.ExecuteScalarAsync<int>(deadLetterSql, parameters);
-        var failed = await conn.ExecuteScalarAsync<int>(failedSql, parameters);
-        var pending = await conn.ExecuteScalarAsync<int>(pendingSql, parameters);
+        var total = await conn.ExecuteScalarAsync<int>(totalSql);
+        var processed = await conn.ExecuteScalarAsync<int>(processedSql);
+        var deadLetter = await conn.ExecuteScalarAsync<int>(deadLetterSql);
+        var failed = await conn.ExecuteScalarAsync<int>(failedSql);
+        var pending = await conn.ExecuteScalarAsync<int>(pendingSql);
 
         return new HanaOutboxStats
         {
@@ -428,10 +355,4 @@ public class HanaOutboxEvent
     public int IsDeadLetter { get; set; }
     public DateTime? LeasedUntil { get; set; }
     public int Priority { get; set; }
-
-    /// <summary>
-    /// Name of the HANA server this event was read from. Not a table column:
-    /// it is set in memory by multi-server dashboard queries.
-    /// </summary>
-    public string? HanaServer { get; set; }
 }

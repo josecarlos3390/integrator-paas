@@ -3,6 +3,7 @@ using Integration.Shared.Clients;
 using Integration.Shared.Configuration;
 using Integration.Shared.Connectors.HansaCrm;
 using Integration.Shared.Infrastructure;
+using Integration.Shared.Messages;
 using Integration.Shared.Repositories;
 using Integration.Shared.Services;
 using Integration.Worker.Dispatchers;
@@ -46,6 +47,7 @@ builder.Services.Configure<TenantsConfig>(builder.Configuration.GetSection("Tena
 builder.Services.Configure<IngestionConfig>(builder.Configuration.GetSection("Ingestion"));
 builder.Services.Configure<PriceListPollingConfig>(builder.Configuration.GetSection("PriceListPolling"));
 builder.Services.Configure<TelegramConfig>(builder.Configuration.GetSection("Telegram"));
+builder.Services.Configure<TenantCacheConfig>(builder.Configuration.GetSection("TenantCache"));
 
 // ============================================================================
 // Observability: OpenTelemetry
@@ -135,7 +137,9 @@ builder.Services.AddScoped<IntegrationLogRepository>();
 builder.Services.AddScoped<DeadLetterRepository>();
 builder.Services.AddScoped<TenantConfigRepository>();
 builder.Services.AddScoped<TenantFeatureFlagRepository>();
+builder.Services.AddScoped<TenantSettingsRepository>();
 builder.Services.AddSingleton<ITenantFeatureService, TenantFeatureService>();
+builder.Services.AddSingleton<TenantStatusService>();
 builder.Services.AddScoped<PriceSnapshotRepository>();
 builder.Services.AddScoped<PollingCursorRepository>();
 builder.Services.AddScoped<VendorBankSnapshotRepository>();
@@ -143,6 +147,8 @@ builder.Services.AddHttpClient<ITelegramNotifier, TelegramNotifier>();
 builder.Services.AddScoped<MetricRepository>();
 builder.Services.AddScoped<TenantQuotaRepository>();
 builder.Services.AddScoped<IntegrationRequestRepository>();
+builder.Services.AddScoped<ISapEventPublisher, SapEventPublisher>();
+builder.Services.AddScoped<ISapDomainEventFactory, SapDomainEventFactory>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<HanaOutboxDispatcher>();
 builder.Services.AddSingleton<Integration.Worker.Services.IRequestRouter, Integration.Worker.Services.RequestRouter>();
@@ -155,6 +161,7 @@ builder.Services.AddSingleton<Integration.Worker.Services.CallbackNotifier>();
 builder.Services.AddMassTransit(x =>
 {
     x.AddConsumer<CrmOrderWorker>();
+    x.AddConsumer<CrmSapEventWorker>();
 
     x.UsingRabbitMq((context, cfg) =>
     {
@@ -166,6 +173,38 @@ builder.Services.AddMassTransit(x =>
         {
             h.Username(user);
             h.Password(pass);
+        });
+
+        cfg.Message<SapDomainEvent>(m =>
+            m.SetEntityName(
+                builder.Configuration["Outbox:EventExchange"] ?? "sap.events"));
+
+        cfg.Publish<SapDomainEvent>(p =>
+        {
+            p.ExchangeType = "topic";
+            p.Durable = true;
+            p.AutoDelete = false;
+        });
+
+        // Consumers bind their own queues to the tenant/object/event keys.
+        cfg.Send<SapDomainEvent>(x =>
+            x.UseRoutingKeyFormatter(c =>
+                $"{c.Message.TenantId}.{c.Message.ObjectType}.{c.Message.EventType}"));
+
+        cfg.ReceiveEndpoint("crm.sap.events", e =>
+        {
+            e.PrefetchCount = 20;
+            e.ConcurrentMessageLimit = 10;
+            e.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(5)));
+            e.ConfigureConsumer<CrmSapEventWorker>(context);
+            foreach (var objectType in new[] { "2", "13" })
+            {
+                e.Bind("sap.events", b =>
+                {
+                    b.ExchangeType = "topic";
+                    b.RoutingKey = $"RETAIL_QA5.{objectType}.*";
+                });
+            }
         });
 
         cfg.ReceiveEndpoint("crm-order-queue", e =>

@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Integration Bus - Administración Maestra</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; color: #333; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+        .header-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #e0e4e8; }
+        .header-bar h1 { font-size: 22px; color: #1a1a2e; margin: 0; }
+        .header-meta { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; font-size: 13px; color: #666; }
+        .master-badge { background: #8e44ad; color: white; padding: 4px 10px; border-radius: 12px; font-weight: 600; }
+        .key-status { font-style: italic; color: #888; }
+
+        .section-title { font-size: 16px; margin-bottom: 4px; color: #1a1a2e; display: flex; align-items: center; gap: 8px; }
+        .section-desc { font-size: 12px; color: #888; margin-bottom: 12px; }
+        .section { background: white; border-radius: 8px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+
+        .filters { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+        .filters select, .filters input, .filters button { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        .filters button { background: #3498db; color: white; border: none; cursor: pointer; }
+        .filters button:hover { background: #2980b9; }
+        .filters button.secondary { background: #6c757d; }
+        .filters button.secondary:hover { background: #5a6268; }
+        .filters button.danger { background: #e74c3c; }
+        .filters button.danger:hover { background: #c0392b; }
+        .filters label { font-size: 13px; color: #555; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; font-weight: 600; color: #555; }
+        tr:hover { background: #f8f9fa; }
+        .badge { padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: 600; text-transform: uppercase; }
+        .badge-active { background: #d4edda; color: #155724; }
+        .badge-inactive { background: #f8d7da; color: #721c24; }
+        .btn-sm { padding: 4px 8px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; }
+        .btn-sm:hover { background: #2980b9; }
+        .btn-sm.danger { background: #e74c3c; }
+        .btn-sm.danger:hover { background: #c0392b; }
+        .btn-sm.success { background: #27ae60; }
+        .btn-sm.success:hover { background: #219150; }
+        .btn-sm.warn { background: #f39c12; }
+        .btn-sm.warn:hover { background: #d68910; }
+
+        .cfg-input { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+        .cfg-input:focus { outline: none; border-color: #3498db; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 12px; }
+        .form-label { font-size: 12px; color: #888; display: block; margin-bottom: 3px; }
+
+        .feature-flag-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+        .feature-flag-row:last-child { border-bottom: none; }
+        .feature-flag-name { font-weight: 600; font-size: 14px; }
+        .feature-flag-desc { font-size: 12px; color: #888; }
+        .toggle-switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; border-radius: 24px; transition: .2s; }
+        .toggle-slider:before { position: absolute; content: ''; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; border-radius: 50%; transition: .2s; }
+        .toggle-switch input:checked + .toggle-slider { background-color: #27ae60; }
+        .toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); }
+
+        .empty { text-align: center; padding: 30px; color: #888; }
+        .error-msg { color: #e74c3c; font-size: 13px; margin-top: 8px; }
+        .hidden { display: none; }
+        .key-box { background: #f8f9fa; border: 1px dashed #ccc; border-radius: 6px; padding: 10px 14px; font-family: monospace; font-size: 13px; word-break: break-all; margin: 8px 0; }
+
+        /* Login gate */
+        .login-card { max-width: 460px; margin: 80px auto; background: white; border-radius: 8px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); text-align: center; }
+        .login-card h2 { color: #1a1a2e; margin-bottom: 6px; }
+        .login-card p { color: #888; font-size: 13px; margin-bottom: 18px; }
+        .login-card input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; margin-bottom: 12px; }
+        .login-card button { width: 100%; padding: 10px; background: #8e44ad; color: white; border: none; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; }
+        .login-card button:hover { background: #732d91; }
+
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .header-bar h1 { font-size: 16px; }
+            table { font-size: 11px; }
+            th, td { padding: 6px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header-bar">
+            <h1>🛡️ Integration Bus - Administración Maestra</h1>
+            <div class="header-meta">
+                <span class="master-badge">MASTER</span>
+                <span class="key-status" id="keyStatus">Sin clave maestra</span>
+                <a href="/" style="font-size:13px;color:#3498db;text-decoration:none;">← Panel de operaciones</a>
+                <button class="btn-sm warn" onclick="changeMasterKey()">Cambiar clave</button>
+            </div>
+        </div>
+
+        <!-- Login gate -->
+        <div id="loginGate" class="login-card hidden">
+            <h2>🔐 Acceso de administrador</h2>
+            <p>Ingresa la clave maestra (X-Admin-Key) para administrar los tenants.</p>
+            <input type="password" id="masterKeyInput" placeholder="Clave maestra" autocomplete="off">
+            <button onclick="submitMasterKey()">Entrar</button>
+            <div class="error-msg" id="loginError"></div>
+        </div>
+
+        <!-- Main view -->
+        <div id="mainView" class="hidden">
+            <!-- Tenants table -->
+            <div class="section">
+                <div class="section-title">🏢 Tenants</div>
+                <div class="section-desc">Lista completa de tenants, incluidos los inactivos. Desde aquí se administra el licenciamiento y la configuración.</div>
+                <div class="filters">
+                    <button onclick="toggleCreateForm()">➕ Nuevo tenant</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>TenantId</th>
+                            <th>Estado</th>
+                            <th>Creado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tenantsBody"></tbody>
+                </table>
+            </div>
+
+            <!-- Create tenant form -->
+            <div id="createFormSection" class="section hidden">
+                <div class="section-title">➕ Crear tenant</div>
+                <div class="section-desc">El tenant se crea inactivo o activo según el conmutador. La API Key se muestra una sola vez.</div>
+                <div class="form-grid">
+                    <div><label class="form-label">TenantId *</label><input id="newTenantId" class="cfg-input" placeholder="tenant-002"></div>
+                    <div><label class="form-label">Nombre *</label><input id="newName" class="cfg-input" placeholder="Cliente Demo"></div>
+                    <div><label class="form-label">URL Service Layer</label><input id="newSapUrl" class="cfg-input" placeholder="https://host:50000"></div>
+                    <div><label class="form-label">CompanyDB</label><input id="newSapCompany" class="cfg-input" placeholder="VIAGGIO_QA"></div>
+                    <div><label class="form-label">Usuario SAP</label><input id="newSapUser" class="cfg-input" placeholder="jdiaz"></div>
+                    <div><label class="form-label">Contraseña SAP</label><input id="newSapPassword" type="password" class="cfg-input"></div>
+                    <div><label class="form-label">CRM Base URL</label><input id="newCrmUrl" class="cfg-input" placeholder="http://localhost:5000"></div>
+                    <div><label class="form-label">CRM API Key</label><input id="newCrmApiKey" type="password" class="cfg-input"></div>
+                    <div>
+                        <label class="form-label">Conector CRM</label>
+                        <select id="newConnectorType" class="cfg-input">
+                            <option value="Mock">Mock</option>
+                            <option value="HansaCrm">HansaCrm</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">SMTP Host</label><input id="newSmtpHost" class="cfg-input" placeholder="smtp.gruporoda.com">
+                    </div>
+                    <div>
+                        <label class="form-label">SMTP Puerto</label><input id="newSmtpPort" type="number" class="cfg-input" value="587">
+                    </div>
+                    <div>
+                        <label class="form-label">SMTP Usuario</label><input id="newSmtpUser" class="cfg-input">
+                    </div>
+                    <div>
+                        <label class="form-label">SMTP Contraseña</label><input id="newSmtpPassword" type="password" class="cfg-input">
+                    </div>
+                    <div>
+                        <label class="form-label">Remitente</label><input id="newEmailFrom" class="cfg-input" placeholder="no-reply@gruporoda.com">
+                    </div>
+                    <div>
+                        <label class="form-label">Activo (licencia)</label>
+                        <label class="toggle-switch"><input type="checkbox" id="newIsActive" checked><span class="toggle-slider"></span></label>
+                    </div>
+                </div>
+                <div class="filters">
+                    <button onclick="createTenant()">Crear tenant</button>
+                    <button class="secondary" onclick="toggleCreateForm()">Cancelar</button>
+                    <span id="createStatus" style="font-size:13px;color:#888;"></span>
+                </div>
+                <div id="newKeyBox" class="hidden">
+                    <div class="section-desc" style="margin-top:10px;">⚠️ Guarda esta API Key: no se volverá a mostrar.</div>
+                    <div class="key-box" id="newKeyValue"></div>
+                </div>
+            </div>
+
+            <!-- Edit tenant panel -->
+            <div id="editSection" class="section hidden">
+                <div class="section-title">✏️ Editar tenant: <span id="editTenantLabel"></span></div>
+                <div class="section-desc">Los campos de contraseña vacíos conservan el valor actual. El conmutador de estado controla la licencia (detiene procesamiento y acceso).</div>
+                <div class="form-grid">
+                    <div><label class="form-label">Nombre</label><input id="editName" class="cfg-input"></div>
+                    <div><label class="form-label">URL Service Layer</label><input id="editSapUrl" class="cfg-input"></div>
+                    <div><label class="form-label">CompanyDB</label><input id="editSapCompany" class="cfg-input"></div>
+                    <div><label class="form-label">Usuario SAP</label><input id="editSapUser" class="cfg-input"></div>
+                    <div><label class="form-label">Contraseña SAP</label><input id="editSapPassword" type="password" class="cfg-input"></div>
+                    <div><label class="form-label">CRM Base URL</label><input id="editCrmUrl" class="cfg-input"></div>
+                    <div><label class="form-label">CRM API Key</label><input id="editCrmApiKey" type="password" class="cfg-input"></div>
+                    <div>
+                        <label class="form-label">Conector CRM</label>
+                        <select id="editConnectorType" class="cfg-input">
+                            <option value="Mock">Mock</option>
+                            <option value="HansaCrm">HansaCrm</option>
+                        </select>
+                    </div>
+                    <div><label class="form-label">SMTP Host</label><input id="editSmtpHost" class="cfg-input"></div>
+                    <div><label class="form-label">SMTP Puerto</label><input id="editSmtpPort" type="number" class="cfg-input"></div>
+                    <div><label class="form-label">SMTP Usuario</label><input id="editSmtpUser" class="cfg-input"></div>
+                    <div><label class="form-label">SMTP Contraseña</label><input id="editSmtpPassword" type="password" class="cfg-input"></div>
+                    <div><label class="form-label">Remitente</label><input id="editEmailFrom" class="cfg-input"></div>
+                    <div>
+                        <label class="form-label">Notificaciones por correo</label>
+                        <label class="toggle-switch"><input type="checkbox" id="editEmailEnabled"><span class="toggle-slider"></span></label>
+                    </div>
+                </div>
+                <div class="filters">
+                    <button onclick="saveTenant()">💾 Guardar</button>
+                    <button class="secondary" onclick="closeEdit()">Cerrar</button>
+                    <span id="editStatus" style="font-size:13px;color:#888;"></span>
+                </div>
+
+                <hr style="border:none;border-top:1px solid #eee;margin:16px 0;">
+
+                <div class="section-title">⚙️ Parámetros (clave-valor)</div>
+                <div class="filters">
+                    <input id="editSettingKey" class="cfg-input" placeholder="nombre.parametro" style="max-width:220px;">
+                    <input id="editSettingValue" class="cfg-input" placeholder="valor" style="max-width:260px;">
+                    <button onclick="addSetting()">Agregar</button>
+                </div>
+                <div id="editSettingsList"></div>
+
+                <hr style="border:none;border-top:1px solid #eee;margin:16px 0;">
+
+                <div class="section-title">🚦 Feature Flags</div>
+                <div id="editFeatureFlags"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const MASTER_BASE = window.location.origin + '/api/master';
+
+        let currentTenant = null;
+        const FEATURE_DESCRIPTIONS = {
+            'BusinessPartnerSync': 'Sincronización de Clientes / Business Partners (SAP → CRM)',
+            'ItemSync': 'Sincronización de Artículos / Items (SAP → CRM)',
+            'InvoiceSync': 'Sincronización de Facturas (SAP → CRM)',
+            'SalesOrderSync': 'Sincronización de Pedidos (bidireccional)',
+            'PriceListSync': 'Sincronización de Listas de Precio (SAP → CRM)'
+        };
+
+        // ---- Clave maestra ----
+        function getMasterKey() {
+            return localStorage.getItem('masterApiKey') || null;
+        }
+
+        function initAuth() {
+            if (getMasterKey()) {
+                showMainView();
+            } else {
+                showLoginGate();
+            }
+        }
+
+        function showLoginGate() {
+            document.getElementById('loginGate').classList.remove('hidden');
+            document.getElementById('mainView').classList.add('hidden');
+            document.getElementById('keyStatus').textContent = 'Sin clave maestra';
+        }
+
+        function showMainView() {
+            document.getElementById('loginGate').classList.add('hidden');
+            document.getElementById('mainView').classList.remove('hidden');
+            document.getElementById('keyStatus').textContent = 'Clave maestra configurada';
+            loadTenants();
+        }
+
+        function submitMasterKey() {
+            const key = document.getElementById('masterKeyInput').value.trim();
+            if (!key) return;
+            localStorage.setItem('masterApiKey', key);
+            document.getElementById('masterKeyInput').value = '';
+            document.getElementById('loginError').textContent = '';
+            showMainView();
+        }
+
+        function changeMasterKey() {
+            localStorage.removeItem('masterApiKey');
+            showLoginGate();
+        }
+
+        async function masterFetch(url, options = {}) {
+            const key = getMasterKey();
+            if (!key) { showLoginGate(); return null; }
+            try {
+                const res = await fetch(url, { ...options, headers: { ...(options.headers || {}), 'X-Admin-Key': key } });
+                if (res.status === 401) {
+                    localStorage.removeItem('masterApiKey');
+                    document.getElementById('loginError').textContent = 'Clave maestra inválida. Verifícala.';
+                    showLoginGate();
+                    return null;
+                }
+                return res;
+            } catch (e) {
+                console.error('Master fetch error:', e);
+                return null;
+            }
+        }
+
+        // ---- Tenants ----
+        async function loadTenants() {
+            const res = await masterFetch(`${MASTER_BASE}/tenants`);
+            if (!res) return;
+            const tenants = await res.json();
+            const tbody = document.getElementById('tenantsBody');
+            if (!tenants || tenants.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty">No hay tenants registrados</td></tr>';
+                return;
+            }
+            tbody.innerHTML = tenants.map(t => `
+                <tr>
+                    <td><strong>${escapeHtml(t.name)}</strong></td>
+                    <td>${escapeHtml(t.tenantId)}</td>
+                    <td><span class="badge ${t.isActive ? 'badge-active' : 'badge-inactive'}">${t.isActive ? 'Activo' : 'Inactivo'}</span></td>
+                    <td>${new Date(t.createdAt).toLocaleString('es-ES')}</td>
+                    <td style="white-space:nowrap;">
+                        <button class="btn-sm" onclick="openEdit('${t.tenantId}')">✏️ Editar</button>
+                        ${t.isActive
+                            ? `<button class="btn-sm danger" onclick="setActive('${t.tenantId}', false)">⏸ Desactivar</button>`
+                            : `<button class="btn-sm success" onclick="setActive('${t.tenantId}', true)">▶ Activar</button>`}
+                        <button class="btn-sm warn" onclick="regenerateKey('${t.tenantId}')">🔑 Nueva key</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function escapeHtml(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        function toggleCreateForm() {
+            const el = document.getElementById('createFormSection');
+            el.classList.toggle('hidden');
+            document.getElementById('newKeyBox').classList.add('hidden');
+            document.getElementById('createStatus').textContent = '';
+        }
+
+        async function createTenant() {
+            const body = {
+                tenantId: document.getElementById('newTenantId').value.trim(),
+                name: document.getElementById('newName').value.trim(),
+                sapServiceLayerUrl: document.getElementById('newSapUrl').value.trim() || null,
+                sapCompanyDb: document.getElementById('newSapCompany').value.trim() || null,
+                sapUserName: document.getElementById('newSapUser').value.trim() || null,
+                sapPassword: document.getElementById('newSapPassword').value || null,
+                crmBaseUrl: document.getElementById('newCrmUrl').value.trim() || null,
+                crmApiKey: document.getElementById('newCrmApiKey').value || null,
+                crmConnectorType: document.getElementById('newConnectorType').value,
+                emailEnabled: false,
+                smtpHost: document.getElementById('newSmtpHost').value.trim() || null,
+                smtpPort: parseInt(document.getElementById('newSmtpPort').value) || 587,
+                smtpUserName: document.getElementById('newSmtpUser').value.trim() || null,
+                smtpPassword: document.getElementById('newSmtpPassword').value || null,
+                emailFromAddress: document.getElementById('newEmailFrom').value.trim() || null,
+                isActive: document.getElementById('newIsActive').checked
+            };
+            const res = await masterFetch(`${MASTER_BASE}/tenants`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const status = document.getElementById('createStatus');
+            if (res && res.ok) {
+                const data = await res.json();
+                status.textContent = '✅ Tenant creado.';
+                document.getElementById('newKeyValue').textContent = data.apiKey;
+                document.getElementById('newKeyBox').classList.remove('hidden');
+                loadTenants();
+            } else if (res) {
+                const err = await res.json().catch(() => ({}));
+                status.textContent = '❌ ' + (err.message || res.statusText);
+            }
+        }
+
+        // ---- Edición ----
+        async function openEdit(tenantId) {
+            const res = await masterFetch(`${MASTER_BASE}/tenants`);
+            if (!res) return;
+            const tenants = await res.json();
+            const t = tenants.find(x => x.tenantId === tenantId);
+            if (!t) return;
+            currentTenant = t;
+            document.getElementById('editSection').classList.remove('hidden');
+            document.getElementById('editTenantLabel').textContent = `${t.name} (${t.tenantId})`;
+            document.getElementById('editName').value = t.name || '';
+            document.getElementById('editSapUrl').value = t.sapServiceLayerUrl || '';
+            document.getElementById('editSapCompany').value = t.sapCompanyDb || '';
+            document.getElementById('editSapUser').value = t.sapUserName || '';
+            document.getElementById('editSapPassword').value = '';
+            document.getElementById('editSapPassword').placeholder = t.hasSapPassword ? '•••••••• (conservar)' : 'Sin contraseña guardada';
+            document.getElementById('editCrmUrl').value = t.crmBaseUrl || '';
+            document.getElementById('editCrmApiKey').value = '';
+            document.getElementById('editCrmApiKey').placeholder = t.hasCrmApiKey ? '•••••••• (conservar)' : 'Sin API Key guardada';
+            document.getElementById('editConnectorType').value = t.crmConnectorType || 'Mock';
+            document.getElementById('editSmtpHost').value = t.smtpHost || '';
+            document.getElementById('editSmtpPort').value = t.smtpPort || 587;
+            document.getElementById('editSmtpUser').value = t.smtpUserName || '';
+            document.getElementById('editSmtpPassword').value = '';
+            document.getElementById('editSmtpPassword').placeholder = t.hasSmtpPassword ? '•••••••• (conservar)' : 'Sin contraseña guardada';
+            document.getElementById('editEmailFrom').value = t.emailFromAddress || '';
+            document.getElementById('editEmailEnabled').checked = !!t.emailEnabled;
+            document.getElementById('editStatus').textContent = '';
+            document.getElementById('editSection').scrollIntoView({ behavior: 'smooth' });
+            loadSettings(tenantId);
+            loadFeatures(tenantId);
+        }
+
+        function closeEdit() {
+            document.getElementById('editSection').classList.add('hidden');
+            currentTenant = null;
+        }
+
+        async function saveTenant() {
+            if (!currentTenant) return;
+            const body = {
+                name: document.getElementById('editName').value.trim() || null,
+                sapServiceLayerUrl: document.getElementById('editSapUrl').value.trim() || null,
+                sapCompanyDb: document.getElementById('editSapCompany').value.trim() || null,
+                sapUserName: document.getElementById('editSapUser').value.trim() || null,
+                sapPassword: document.getElementById('editSapPassword').value || null,
+                crmBaseUrl: document.getElementById('editCrmUrl').value.trim() || null,
+                crmApiKey: document.getElementById('editCrmApiKey').value || null,
+                crmConnectorType: document.getElementById('editConnectorType').value,
+                emailEnabled: document.getElementById('editEmailEnabled').checked,
+                smtpHost: document.getElementById('editSmtpHost').value.trim() || null,
+                smtpPort: parseInt(document.getElementById('editSmtpPort').value) || null,
+                smtpUserName: document.getElementById('editSmtpUser').value.trim() || null,
+                smtpPassword: document.getElementById('editSmtpPassword').value || null,
+                emailFromAddress: document.getElementById('editEmailFrom').value.trim() || null
+            };
+            const res = await masterFetch(`${MASTER_BASE}/tenants/${currentTenant.tenantId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const status = document.getElementById('editStatus');
+            if (res && res.ok) {
+                status.textContent = '✅ Configuración guardada.';
+                loadTenants();
+                openEdit(currentTenant.tenantId);
+            } else {
+                status.textContent = '❌ Error al guardar.';
+            }
+        }
+
+        async function setActive(tenantId, isActive) {
+            const action = isActive ? 'activar' : 'desactivar';
+            if (!confirm(`¿${action} el tenant '${tenantId}'? Los eventos se ${isActive ? 'procesarán' : 'detendrán'} y el acceso por API key se ${isActive ? 'habilitará' : 'bloqueará'}.`)) return;
+            const res = await masterFetch(`${MASTER_BASE}/tenants/${tenantId}/${isActive ? 'activate' : 'deactivate'}`, { method: 'POST' });
+            if (res && res.ok) loadTenants();
+        }
+
+        async function regenerateKey(tenantId) {
+            if (!confirm(`¿Regenerar la API Key del tenant '${tenantId}'? La anterior dejará de funcionar.`)) return;
+            const res = await masterFetch(`${MASTER_BASE}/tenants/${tenantId}/api-key`, { method: 'POST' });
+            if (!res || !res.ok) { alert('Error al regenerar la key.'); return; }
+            const data = await res.json();
+            alert('Nueva API Key del tenant ' + tenantId + ':\n\n' + data.apiKey + '\n\nGuárdala, no se volverá a mostrar.');
+            loadTenants();
+        }
+
+        // ---- Parámetros ----
+        async function loadSettings(tenantId) {
+            const res = await masterFetch(`${MASTER_BASE}/tenants/${tenantId}/settings`);
+            if (!res) return;
+            const settings = await res.json();
+            const list = document.getElementById('editSettingsList');
+            if (!settings || settings.length === 0) {
+                list.innerHTML = '<div class="empty">No hay parámetros configurados</div>';
+                return;
+            }
+            list.innerHTML = settings.map(s => `
+                <div class="feature-flag-row">
+                    <div>
+                        <div class="feature-flag-name">${escapeHtml(s.settingKey)}</div>
+                        <div class="feature-flag-desc">${escapeHtml(s.settingValue)}</div>
+                    </div>
+                    <button class="btn-sm danger" onclick="deleteSetting('${tenantId}', '${s.settingKey}')">Eliminar</button>
+                </div>
+            `).join('');
+        }
+
+        async function addSetting() {
+            if (!currentTenant) return;
+            const key = document.getElementById('editSettingKey').value.trim();
+            const value = document.getElementById('editSettingValue').value.trim();
+            if (!key) { alert('Ingresa un nombre de parámetro'); return; }
+            const res = await masterFetch(`${MASTER_BASE}/tenants/${currentTenant.tenantId}/settings/${encodeURIComponent(key)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ settingValue: value })
+            });
+            if (res && res.ok) {
+                document.getElementById('editSettingKey').value = '';
+                document.getElementById('editSettingValue').value = '';
+                loadSettings(currentTenant.tenantId);
+            } else {
+                alert('Error al guardar el parámetro.');
+            }
+        }
+
+        async function deleteSetting(tenantId, key) {
+            if (!confirm(`¿Eliminar el parámetro '${key}'?`)) return;
+            const res = await masterFetch(`${MASTER_BASE}/tenants/${tenantId}/settings/${encodeURIComponent(key)}`, { method: 'DELETE' });
+            if (res && res.ok) loadSettings(tenantId);
+        }
+
+        // ---- Feature flags ----
+        async function loadFeatures(tenantId) {
+            const res = await masterFetch(`${MASTER_BASE}/tenants/${tenantId}/features`);
+            if (!res) return;
+            const flags = await res.json();
+            const flagMap = {};
+            if (flags) flags.forEach(f => flagMap[f.featureKey] = f.isEnabled);
+            const html = Object.keys(FEATURE_DESCRIPTIONS).map(key => {
+                const isEnabled = flagMap[key] !== undefined ? flagMap[key] : true;
+                return `
+                    <div class="feature-flag-row">
+                        <div>
+                            <div class="feature-flag-name">${FEATURE_DESCRIPTIONS[key]}</div>
+                            <div class="feature-flag-desc">Key: ${key}</div>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="setFeature('${tenantId}', '${key}', this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                `;
+            }).join('');
+            document.getElementById('editFeatureFlags').innerHTML = html;
+        }
+
+        async function setFeature(tenantId, featureKey, isEnabled) {
+            const res = await masterFetch(`${MASTER_BASE}/tenants/${tenantId}/features/${featureKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ isEnabled })
+            });
+            if (!res || !res.ok) {
+                alert('Error al actualizar feature flag.');
+                loadFeatures(tenantId);
+            }
+        }
+
+        // Inicio
+        initAuth();
+    </script>
+</body>
+</html>

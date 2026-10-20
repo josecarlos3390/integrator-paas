@@ -275,3 +275,93 @@ src/
 ## 📄 Licencia
 
 Proyecto interno Grupo Roda.
+
+## Bus de eventos SAP → consumidores
+
+El Worker normaliza los eventos del outbox de HANA y los publica en RabbitMQ como
+`SapDomainEvent`. Cualquier aplicación puede suscribirse con su propia cola;
+no hay un listener hardcodeado.
+
+```text
+SAP → INTEGRATION_BUS.OUTBOX_EVENTS → Worker → sap.events (topic)
+                                                ├── chatbot.sap.events
+                                                ├── crm.sap.events
+                                                └── otra-app.sap.events
+```
+
+### Contrato
+
+```json
+{
+  "eventId": "AA2A00D0C4C39C151A00780047BFF73D",
+  "tenantId": "RETAIL_QA5",
+  "companyDb": "RETAIL_QA5",
+  "eventType": "Updated",
+  "objectType": "7",
+  "aggregateId": "DCHRPCM160098",
+  "schemaVersion": 1,
+  "occurredAt": "2026-10-20T14:38:00Z",
+  "data": {
+    "sku": "DCHRPCM160098",
+    "card_code": "*1",
+    "periods": []
+  }
+}
+```
+
+### Tipos normalizados
+
+| ObjectType | Entidad | Consumidor |
+|---|---|---|
+| `2` | Cliente / Business Partner | CRM |
+| `4` | Artículo | Chatbot |
+| `7` | Precio especial / descuento | Chatbot |
+| `13` | Factura A/R | Chatbot / CRM |
+
+Los movimientos de inventario no se publican. El stock se consulta por API con
+caché para no saturar el Service Layer.
+
+### Routing keys
+
+```text
+RETAIL_QA5.4.*
+RETAIL_QA5.7.*
+RETAIL_QA5.13.*
+```
+
+Cada consumidor declara su propia cola durable. No compartir una cola entre
+aplicaciones: RabbitMQ repartiría los mensajes y cada aplicación recibiría solo
+una parte.
+
+### Worker por instancia
+
+El Worker actual usa una conexión HANA por proceso. Para varias instancias SAP:
+
+```text
+Worker A → hanaroda   / VIAGGIO_QA
+Worker B → hanaroda25 / RETAIL_QA5
+```
+
+Ver [`docs/worker-por-instancia.md`](docs/worker-por-instancia.md).
+
+### Caché y límites
+
+- Artículo: 15 segundos.
+- Cliente: 30 segundos.
+- Precios especiales: sin caché, para no publicar descuentos vencidos.
+- `Outbox:PublishObjectTypes` limita los tipos publicados.
+- El bot responde desde su read model; el PaaS solo se consulta para stock o
+  datos que cambian rápidamente.
+
+### Prueba
+
+```powershell
+# Worker
+dotnet run --project src\Integration.Worker
+
+# Ver colas y bindings
+docker exec integration-rabbitmq rabbitmqctl list_queues name messages_ready
+docker exec integration-rabbitmq rabbitmqctl list_bindings source_name destination_name routing_key
+```
+
+Documentación detallada en [`docs/event-bus.md`](docs/event-bus.md).

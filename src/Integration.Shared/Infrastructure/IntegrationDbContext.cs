@@ -18,6 +18,7 @@ public class IntegrationDbContext : DbContext
     public DbSet<ProcessedMessage> ProcessedMessages => Set<ProcessedMessage>();
     public DbSet<DeadLetterEvent> DeadLetterEvents => Set<DeadLetterEvent>();
     public DbSet<TenantFeatureFlag> TenantFeatureFlags => Set<TenantFeatureFlag>();
+    public DbSet<TenantSetting> TenantSettings => Set<TenantSetting>();
     public DbSet<IntegrationAlert> Alerts => Set<IntegrationAlert>();
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
     public DbSet<PriceSnapshot> PriceSnapshots => Set<PriceSnapshot>();
@@ -75,7 +76,22 @@ public class IntegrationDbContext : DbContext
             entity.Property(e => e.Name).HasMaxLength(256).IsRequired();
             entity.Property(e => e.ApiKeyHash).HasMaxLength(256).IsRequired();
             entity.Property(e => e.CrmConnectorType).HasConversion<string>().HasMaxLength(32);
+            entity.Property(e => e.SmtpHost).HasMaxLength(256);
+            entity.Property(e => e.SmtpUserName).HasMaxLength(256);
+            entity.Property(e => e.SmtpPasswordEncrypted).HasMaxLength(512);
+            entity.Property(e => e.EmailFromAddress).HasMaxLength(256);
             entity.HasIndex(e => e.IsActive);
+        });
+
+        // TenantSetting
+        modelBuilder.Entity<TenantSetting>(entity =>
+        {
+            entity.ToTable("tenant_settings");
+            entity.HasKey(e => new { e.TenantId, e.SettingKey });
+            entity.Property(e => e.TenantId).HasMaxLength(64);
+            entity.Property(e => e.SettingKey).HasMaxLength(128);
+            entity.Property(e => e.UpdatedAt).IsRequired();
+            entity.HasIndex(e => e.TenantId);
         });
 
         // ProcessedMessage

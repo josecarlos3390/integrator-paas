@@ -21,4 +21,12 @@ public class TenantConfig
     public CrmConnectorType CrmConnectorType { get; set; } = CrmConnectorType.Mock;
     public bool IsActive { get; set; }
     public DateTime CreatedAt { get; set; }
+
+    // Email notification settings (per tenant)
+    public bool EmailEnabled { get; set; }
+    public string SmtpHost { get; set; } = string.Empty;
+    public int SmtpPort { get; set; } = 587;
+    public string SmtpUserName { get; set; } = string.Empty;
+    public string SmtpPasswordEncrypted { get; set; } = string.Empty;
+    public string EmailFromAddress { get; set; } = string.Empty;
 }

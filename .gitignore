@@ -46,3 +46,6 @@ Thumbs.db
 
 # Published binaries for Windows Services (SRVGLPI01)
 .publish/
+
+# Local agent probes/plans
+.zcode/

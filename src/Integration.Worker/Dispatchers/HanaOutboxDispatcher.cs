@@ -30,11 +30,13 @@ public class HanaOutboxDispatcher
     private readonly IntegrationLogRepository _logRepo;
     private readonly DeadLetterRepository _deadLetterRepo;
     private readonly ITenantFeatureService _featureService;
+    private readonly TenantStatusService _tenantStatusService;
     private readonly IAlertingService _alertingService;
     private readonly IIdempotencyService _idempotencyService;
     private readonly IOptions<OutboxConfig> _config;
     private readonly TenantQuotaRepository _quotaRepo;
     private readonly IOptions<HansaCrmConfig> _hansaConfig;
+    private readonly ISapEventPublisher _eventPublisher;
     private readonly ILogger<HanaOutboxDispatcher> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly VendorBankSnapshotRepository _vendorBankRepo;
@@ -52,11 +54,13 @@ public class HanaOutboxDispatcher
         IntegrationLogRepository logRepo,
         DeadLetterRepository deadLetterRepo,
         ITenantFeatureService featureService,
+        TenantStatusService tenantStatusService,
         IAlertingService alertingService,
         IIdempotencyService idempotencyService,
         TenantQuotaRepository quotaRepo,
         IOptions<OutboxConfig> config,
         IOptions<HansaCrmConfig> hansaConfig,
+        ISapEventPublisher eventPublisher,
         ILogger<HanaOutboxDispatcher> logger,
         IServiceScopeFactory scopeFactory,
         VendorBankSnapshotRepository vendorBankRepo,
@@ -67,11 +71,13 @@ public class HanaOutboxDispatcher
         _logRepo = logRepo;
         _deadLetterRepo = deadLetterRepo;
         _featureService = featureService;
+        _tenantStatusService = tenantStatusService;
         _alertingService = alertingService;
         _idempotencyService = idempotencyService;
         _quotaRepo = quotaRepo;
         _config = config;
         _hansaConfig = hansaConfig;
+        _eventPublisher = eventPublisher;
         _logger = logger;
         _scopeFactory = scopeFactory;
         _vendorBankRepo = vendorBankRepo;
@@ -192,6 +198,37 @@ public class HanaOutboxDispatcher
 
         try
         {
+            // Licensing check: inactive tenants are skipped entirely
+            if (!await _tenantStatusService.IsLicensedAsync(evt.TenantId, ct))
+            {
+                _logger.LogWarning(
+                    "Tenant {TenantId} is inactive (licensing). Skipping event {EventId}.",
+                    evt.TenantId, evt.Id);
+                await _hanaRepo.MarkProcessedAsync(evt.Id, ct);
+                sw.Stop();
+                IntegrationMetrics.RecordEventProcessed(evt.EventType, evt.TenantId, "skipped");
+                IntegrationMetrics.RecordEventLatency(evt.EventType, evt.TenantId, sw.ElapsedMilliseconds);
+                await WriteLogAsync(new IntegrationLog
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = evt.TenantId,
+                    CorrelationId = correlationId,
+                    Direction = IntegrationDirection.SapToCrm,
+                    EventType = evt.EventType,
+                    ExternalId = evt.AggregateId,
+                    Status = "tenant_inactive",
+                    ErrorMessage = $"Tenant {evt.TenantId} is inactive (licensing)",
+                    DurationMs = sw.ElapsedMilliseconds,
+                    CreatedAt = DateTime.UtcNow
+                }, pendingLogs, ct);
+                return;
+            }
+
+            if (_config.Value.PublishEvents)
+            {
+                await _eventPublisher.PublishAsync(evt, ct);
+            }
+
             var featureKey = _featureService.ResolveFeatureKey(evt.ObjectType);
             var isEnabled = await _featureService.IsEnabledAsync(evt.TenantId, featureKey, ct);
             if (!isEnabled)
@@ -749,6 +786,14 @@ public class HanaOutboxDispatcher
 
         try
         {
+            if (_config.Value.PublishEvents)
+            {
+                foreach (var evt in subBatch)
+                {
+                    await _eventPublisher.PublishAsync(evt, ct);
+                }
+            }
+
             // Fetch SAP data for every event in the sub-batch
             var customerPayloads = new List<CrmCustomerPayload>();
             var invoicePayloads = new List<CrmInvoicePayload>();

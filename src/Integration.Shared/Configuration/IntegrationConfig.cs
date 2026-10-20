@@ -53,6 +53,24 @@ public class OutboxConfig
     public int MaxAttempts { get; set; } = 5;
 
     /// <summary>
+    /// When true, each HANA outbox event is also published to the integration
+    /// event bus (RabbitMQ) for additional consumers such as the chatbot.
+    /// Disabled by default so the existing CRM flow is not affected.
+    /// </summary>
+    public bool PublishEvents { get; set; } = false;
+
+    public string EventExchange { get; set; } = "sap.events";
+
+    /// <summary>
+    /// Object types published to downstream consumers. Inventory movements
+    /// are intentionally excluded to avoid overloading the bus.
+    /// </summary>
+    public HashSet<string> PublishObjectTypes { get; set; } = new()
+    {
+        "2", "4", "7", "13"
+    };
+
+    /// <summary>
     /// Priority by SAP document type (ObjectType). Higher number = higher priority.
     /// If not in the dictionary, uses 0 (default priority).
     /// </summary>
@@ -74,6 +92,24 @@ public class OutboxConfig
 public class TenantsConfig
 {
     public string DefaultTenantId { get; set; } = string.Empty;
+}
+
+public class AdminConfig
+{
+    /// <summary>
+    /// SHA-256 hex hash of the master administration API key
+    /// (X-Admin-Key header) for /api/master endpoints.
+    /// </summary>
+    public string MasterApiKeyHash { get; set; } = string.Empty;
+}
+
+public class TenantCacheConfig
+{
+    /// <summary>
+    /// TTL in seconds for cached per-tenant SAP/CRM clients. After this period
+    /// clients are rebuilt, picking up configuration changes without restart.
+    /// </summary>
+    public int ClientCacheTtlSeconds { get; set; } = 300;
 }
 
 public class AlertingConfig

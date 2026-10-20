@@ -21,6 +21,7 @@ public class CrmOrderWorker : IConsumer<CreateOrderMessage>
     private readonly IntegrationLogRepository _logRepo;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IIdempotencyService _idempotencyService;
+    private readonly TenantStatusService _tenantStatusService;
     private readonly ILogger<CrmOrderWorker> _logger;
 
     public CrmOrderWorker(
@@ -28,12 +29,14 @@ public class CrmOrderWorker : IConsumer<CreateOrderMessage>
         IntegrationLogRepository logRepo,
         IHttpClientFactory httpClientFactory,
         IIdempotencyService idempotencyService,
+        TenantStatusService tenantStatusService,
         ILogger<CrmOrderWorker> logger)
     {
         _clientFactory = clientFactory;
         _logRepo = logRepo;
         _httpClientFactory = httpClientFactory;
         _idempotencyService = idempotencyService;
+        _tenantStatusService = tenantStatusService;
         _logger = logger;
     }
 
@@ -46,6 +49,31 @@ public class CrmOrderWorker : IConsumer<CreateOrderMessage>
 
         _logger.LogInformation("Processing async order {CrmOrderId} for tenant {TenantId}",
             message.Payload.CrmOrderId, message.TenantId);
+
+        // Licensing check: inactive tenants must not reach SAP
+        if (!await _tenantStatusService.IsLicensedAsync(message.TenantId, ct))
+        {
+            sw.Stop();
+            _logger.LogWarning("Order {CrmOrderId} skipped: tenant {TenantId} is inactive (licensing)",
+                message.Payload.CrmOrderId, message.TenantId);
+
+            await _logRepo.AddAsync(new IntegrationLog
+            {
+                Id = Guid.NewGuid(),
+                TenantId = message.TenantId,
+                CorrelationId = correlationId,
+                Direction = IntegrationDirection.CrmToSap,
+                EventType = "SalesOrderCreated",
+                ExternalId = message.Payload.CrmOrderId,
+                Status = "tenant_inactive",
+                ErrorMessage = $"Tenant {message.TenantId} is inactive (licensing)",
+                DurationMs = sw.ElapsedMilliseconds,
+                CreatedAt = DateTime.UtcNow
+            }, ct);
+
+            await NotifyCrmAsync(message, null, null, false, "Tenant inactive (licensing)", ct);
+            return;
+        }
 
         var sapClient = await _clientFactory.GetSapClientAsync(message.TenantId);
 

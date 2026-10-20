@@ -32,9 +32,12 @@ public class TenantClientFactory : ITenantClientFactory
     private readonly IMemoryCache _cache;
     private readonly IHttpMessageHandlerFactory _handlerFactory;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly TimeSpan _clientCacheTtl;
 
     private readonly ConcurrentDictionary<string, Lazy<Task<ServiceLayerClient>>> _sapClients = new();
+    private readonly ConcurrentDictionary<string, DateTime> _sapClientCreatedAt = new();
     private readonly ConcurrentDictionary<string, Lazy<Task<ICrmConnector>>> _crmConnectors = new();
+    private readonly ConcurrentDictionary<string, DateTime> _crmConnectorCreatedAt = new();
 
     // Per-tenant Polly pipelines — isolated circuit breakers (SaaS requirement)
     private readonly ConcurrentDictionary<string, ResiliencePipeline<HttpResponseMessage>> _sapPipelines = new();
@@ -45,6 +48,7 @@ public class TenantClientFactory : ITenantClientFactory
         IOptions<SapConfig> globalSapConfig,
         IOptions<CrmConfig> globalCrmConfig,
         IOptions<HansaCrmConfig> hansaCrmConfig,
+        IOptions<TenantCacheConfig> cacheConfig,
         IMemoryCache cache,
         IHttpMessageHandlerFactory handlerFactory,
         ILoggerFactory loggerFactory)
@@ -53,6 +57,7 @@ public class TenantClientFactory : ITenantClientFactory
         _globalSapConfig = globalSapConfig;
         _globalCrmConfig = globalCrmConfig;
         _hansaCrmConfig = hansaCrmConfig;
+        _clientCacheTtl = TimeSpan.FromSeconds(Math.Max(10, cacheConfig.Value.ClientCacheTtlSeconds));
         _cache = cache;
         _handlerFactory = handlerFactory;
         _loggerFactory = loggerFactory;
@@ -60,14 +65,54 @@ public class TenantClientFactory : ITenantClientFactory
 
     public Task<ServiceLayerClient> GetSapClientAsync(string tenantId)
     {
-        var lazy = _sapClients.GetOrAdd(tenantId, id => new Lazy<Task<ServiceLayerClient>>(() => CreateSapClientAsync(id)));
+        // TTL-based refresh so configuration changes made in the administration
+        // interface are picked up without a restart. Pipelines stay cached on
+        // purpose (circuit breaker state belongs to the target system).
+        if (IsStale(tenantId, _sapClientCreatedAt))
+        {
+            _sapClients[tenantId] = new Lazy<Task<ServiceLayerClient>>(() => CreateSapClientAsync(tenantId));
+            _sapClientCreatedAt[tenantId] = DateTime.UtcNow;
+        }
+
+        var lazy = _sapClients.GetOrAdd(tenantId, id =>
+        {
+            _sapClientCreatedAt[id] = DateTime.UtcNow;
+            return new Lazy<Task<ServiceLayerClient>>(() => CreateSapClientAsync(id));
+        });
         return lazy.Value;
     }
 
     public Task<ICrmConnector> GetCrmConnectorAsync(string tenantId)
     {
-        var lazy = _crmConnectors.GetOrAdd(tenantId, id => new Lazy<Task<ICrmConnector>>(() => CreateCrmConnectorAsync(id)));
+        if (IsStale(tenantId, _crmConnectorCreatedAt))
+        {
+            _crmConnectors[tenantId] = new Lazy<Task<ICrmConnector>>(() => CreateCrmConnectorAsync(tenantId));
+            _crmConnectorCreatedAt[tenantId] = DateTime.UtcNow;
+        }
+
+        var lazy = _crmConnectors.GetOrAdd(tenantId, id =>
+        {
+            _crmConnectorCreatedAt[id] = DateTime.UtcNow;
+            return new Lazy<Task<ICrmConnector>>(() => CreateCrmConnectorAsync(id));
+        });
         return lazy.Value;
+    }
+
+    public Task EvictTenantAsync(string tenantId)
+    {
+        _sapClients.TryRemove(tenantId, out _);
+        _sapClientCreatedAt.TryRemove(tenantId, out _);
+        _crmConnectors.TryRemove(tenantId, out _);
+        _crmConnectorCreatedAt.TryRemove(tenantId, out _);
+        _sapPipelines.TryRemove(tenantId, out _);
+        _crmPipelines.TryRemove(tenantId, out _);
+        return Task.CompletedTask;
+    }
+
+    private bool IsStale(string tenantId, ConcurrentDictionary<string, DateTime> createdAt)
+    {
+        return createdAt.TryGetValue(tenantId, out var created) &&
+               DateTime.UtcNow - created > _clientCacheTtl;
     }
 
     private async Task<ServiceLayerClient> CreateSapClientAsync(string tenantId)

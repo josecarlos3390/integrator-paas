@@ -7,6 +7,7 @@ using Integration.Shared.Domain;
 using Integration.Shared.Repositories;
 using Integration.Shared.Services;
 using Integration.Worker.Dispatchers;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -23,11 +24,19 @@ public class HanaOutboxDispatcherTests
         Mock<IntegrationLogRepository>? logRepo = null,
         Mock<TenantQuotaRepository>? quotaRepo = null,
         Mock<ITenantFeatureService>? featureService = null,
-        Mock<IIdempotencyService>? idempotencyService = null)
+        Mock<IIdempotencyService>? idempotencyService = null,
+        Mock<TenantStatusService>? tenantStatusService = null)
     {
         var hanaRepoMock = hanaRepo ?? new Mock<HanaOutboxRepository>(MockBehavior.Loose, null!, DefaultOutboxOptions, null!);
         var logRepoMock = logRepo ?? new Mock<IntegrationLogRepository>(MockBehavior.Loose, null!);
         var quotaRepoMock = quotaRepo ?? new Mock<TenantQuotaRepository>(MockBehavior.Loose, null!);
+        var statusServiceMock = tenantStatusService ?? new Mock<TenantStatusService>(
+            MockBehavior.Loose,
+            null!,
+            new MemoryCache(new MemoryCacheOptions()),
+            NullLogger<TenantStatusService>.Instance);
+        statusServiceMock.Setup(x => x.IsLicensedAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         return new HanaOutboxDispatcher(
             hanaRepoMock.Object,
@@ -35,11 +44,13 @@ public class HanaOutboxDispatcherTests
             logRepoMock.Object,
             new Mock<DeadLetterRepository>(MockBehavior.Loose, null!).Object,
             featureService?.Object ?? new Mock<ITenantFeatureService>().Object,
+            statusServiceMock.Object,
             new Mock<IAlertingService>().Object,
             idempotencyService?.Object ?? new Mock<IIdempotencyService>().Object,
             quotaRepoMock.Object,
             Options.Create(new OutboxConfig { BatchSize = 10, MaxAttempts = 5, PollingSeconds = 5 }),
             Options.Create(new HansaCrmConfig()),
+            new Mock<ISapEventPublisher>().Object,
             NullLogger<HanaOutboxDispatcher>.Instance,
             new Mock<IServiceScopeFactory>().Object,
             new Mock<VendorBankSnapshotRepository>(MockBehavior.Loose, null!).Object,
@@ -59,6 +70,29 @@ public class HanaOutboxDispatcherTests
             .ReturnsAsync(false);
 
         var dispatcher = CreateDispatcher(hanaRepo: hanaRepo, featureService: featureService);
+        var evt = new HanaOutboxEvent { Id = "evt-1", TenantId = "t1", ObjectType = "13", EventType = "Created", AggregateId = "1001" };
+
+        await dispatcher.ProcessEventAsync(evt, null, CancellationToken.None);
+
+        hanaRepo.Verify(x => x.MarkProcessedAsync("evt-1", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessEventAsync_WhenTenantInactive_MarksProcessedAndSkips()
+    {
+        var hanaRepo = new Mock<HanaOutboxRepository>(MockBehavior.Strict, null!, DefaultOutboxOptions, null!);
+        hanaRepo.Setup(x => x.MarkProcessedAsync("evt-1", It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var statusService = new Mock<TenantStatusService>(
+            MockBehavior.Loose,
+            null!,
+            new MemoryCache(new MemoryCacheOptions()),
+            NullLogger<TenantStatusService>.Instance);
+        statusService.Setup(x => x.IsLicensedAsync("t1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var dispatcher = CreateDispatcher(hanaRepo: hanaRepo, tenantStatusService: statusService);
         var evt = new HanaOutboxEvent { Id = "evt-1", TenantId = "t1", ObjectType = "13", EventType = "Created", AggregateId = "1001" };
 
         await dispatcher.ProcessEventAsync(evt, null, CancellationToken.None);

@@ -18,4 +18,11 @@ public interface ITenantClientFactory
     /// The concrete implementation depends on the tenant's CrmConnectorType config.
     /// </summary>
     Task<ICrmConnector> GetCrmConnectorAsync(string tenantId);
+
+    /// <summary>
+    /// Drops the cached clients/pipelines for a tenant so the next access
+    /// rebuilds them from the latest tenant_config. Called after a config
+    /// update through the administration interface.
+    /// </summary>
+    Task EvictTenantAsync(string tenantId);
 }

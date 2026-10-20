@@ -18,6 +18,7 @@ public class IngestionProcessor
 {
     private readonly IRequestRouter _router;
     private readonly ITenantFeatureService _featureService;
+    private readonly TenantStatusService _tenantStatusService;
     private readonly TenantQuotaRepository _quotaRepo;
     private readonly IntegrationLogRepository _logRepo;
     private readonly DeadLetterRepository _deadLetterRepo;
@@ -30,6 +31,7 @@ public class IngestionProcessor
     public IngestionProcessor(
         IRequestRouter router,
         ITenantFeatureService featureService,
+        TenantStatusService tenantStatusService,
         TenantQuotaRepository quotaRepo,
         IntegrationLogRepository logRepo,
         DeadLetterRepository deadLetterRepo,
@@ -41,6 +43,7 @@ public class IngestionProcessor
     {
         _router = router;
         _featureService = featureService;
+        _tenantStatusService = tenantStatusService;
         _quotaRepo = quotaRepo;
         _logRepo = logRepo;
         _deadLetterRepo = deadLetterRepo;
@@ -63,6 +66,17 @@ public class IngestionProcessor
 
         try
         {
+            // 0. Licensing check: inactive tenants are skipped entirely
+            if (!await _tenantStatusService.IsLicensedAsync(request.TenantId, ct))
+            {
+                _logger.LogInformation(
+                    "Request {RequestId} skipped: tenant {TenantId} is inactive (licensing)",
+                    request.Id, request.TenantId);
+
+                await FinalizeSkippedAsync(request, requestRepo, ct);
+                return;
+            }
+
             // 1. Feature flag check
             var featureKey = MapEntityTypeToFeatureKey(request.EntityType);
             if (!string.IsNullOrEmpty(featureKey))

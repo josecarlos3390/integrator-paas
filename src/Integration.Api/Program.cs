@@ -44,6 +44,8 @@ builder.Services.Configure<AlertingConfig>(builder.Configuration.GetSection("Ale
 builder.Services.Configure<IdempotencyConfig>(builder.Configuration.GetSection("Idempotency"));
 builder.Services.Configure<TenantsConfig>(builder.Configuration.GetSection("Tenants"));
 builder.Services.Configure<IngestionConfig>(builder.Configuration.GetSection("Ingestion"));
+builder.Services.Configure<AdminConfig>(builder.Configuration.GetSection("Admin"));
+builder.Services.Configure<TenantCacheConfig>(builder.Configuration.GetSection("TenantCache"));
 
 // ============================================================================
 // Observability: OpenTelemetry
@@ -133,11 +135,13 @@ builder.Services.AddScoped<IntegrationLogRepository>();
 builder.Services.AddScoped<DeadLetterRepository>();
 builder.Services.AddScoped<TenantConfigRepository>();
 builder.Services.AddScoped<TenantFeatureFlagRepository>();
+builder.Services.AddScoped<TenantSettingsRepository>();
 builder.Services.AddScoped<MetricRepository>();
 builder.Services.AddScoped<TenantQuotaRepository>();
 builder.Services.AddScoped<IntegrationRequestRepository>();
 builder.Services.AddScoped<VendorBankSnapshotRepository>();
 builder.Services.AddSingleton<ITenantFeatureService, TenantFeatureService>();
+builder.Services.AddSingleton<TenantStatusService>();
 builder.Services.AddMemoryCache();
 
 // ============================================================================

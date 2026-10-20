@@ -1,0 +1,221 @@
+{
+  "info": {
+    "name": "iVend Retail 6.6 - Integration Service",
+    "description": "Coleccion de pruebas para la API SOAP de iVend Retail (IntegrationService, WCF BasicHttpBinding).\n\n*** EL ENDPOINT ES PRODUCCION (Grupo Roda) ***\nEl request '05 - CREAR PEDIDO DE VENTA' genera una transaccion REAL y, si GenerateIntegrationEvent=true, la propaga a SAP Business One.\n\nVALORES REALES VERIFICADOS EN ESTA INSTALACION:\n  StoreId          TIENDA01            (CASA MATRIZ)\n  POSId            T1POS11             (T1 POS 11- DESPACHO, habilitado)\n  UserId           1                   (valida contra iVend)\n  CustomerId       T1IVCL38499         (CLIENTES GENERALES)\n  ProductId        JRDMBLE010064       (MESA PLEGABLE 2.4X0.76M BLANCA SOL GARDEN)\n  Precio lista 1   1599.00\n  TaxCodeId        IVA\n  BusinessDate     2026-10-02          (fecha de negocio de TIENDA01)\n  PaymentTypeId    TCREDITO / TDEBITO / CASH / QR / GIFTCARD\n\nLa variable 'password' se deja vacia a proposito: NO versionar credenciales de produccion.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://10.0.3.2", "type": "string" },
+    { "key": "soapNs", "value": "http://www.iVend.com/IIntegrationService/2010/12", "type": "string" },
+    { "key": "storeId", "value": "TIENDA01", "type": "string" },
+    { "key": "posId", "value": "T1POS11", "type": "string" },
+    { "key": "userId", "value": "1", "type": "string" },
+    { "key": "password", "value": "", "type": "string" },
+    { "key": "customerId", "value": "T1IVCL38499", "type": "string" },
+    { "key": "webOrderRef", "value": "WEB-2026-000123", "type": "string" },
+    { "key": "productId", "value": "JRDMBLE010064", "type": "string" },
+    { "key": "productDescription", "value": "MESA PLEGABLE 2.4X0.76M BLANCA SOL GARDEN", "type": "string" },
+    { "key": "unitPrice", "value": "1599.00", "type": "string" },
+    { "key": "quantity", "value": "2", "type": "string" },
+    { "key": "totalAmount", "value": "3198.00", "type": "string" },
+    { "key": "paymentTypeId", "value": "TCREDITO", "type": "string" },
+    { "key": "businessDate", "value": "2026-10-02", "type": "string" },
+    { "key": "transactionDate", "value": "2026-10-02T14:30:00", "type": "string" },
+    { "key": "createdTransactionKey", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "00 - Smoke test (CheckAPIConnection)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "text/xml; charset=utf-8" },
+          { "key": "SOAPAction", "value": "\"{{soapNs}}/IMobileIntegrationQueueService/CheckAPIConnection\"" }
+        ],
+        "url": { "raw": "{{baseUrl}}/iVendAPI/iVendAPI.svc", "host": ["{{baseUrl}}"], "path": ["iVendAPI", "iVendAPI.svc"] },
+        "body": {
+          "mode": "raw",
+          "raw": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <s:Body>\n    <CheckAPIConnection xmlns=\"{{soapNs}}\" />\n  </s:Body>\n</s:Envelope>",
+          "options": { "raw": { "language": "xml" } }
+        },
+        "description": "Verifica que el servicio responde. No requiere parametros ni credenciales. Esperado: <CheckAPIConnectionResult>true</CheckAPIConnectionResult>"
+      }
+    },
+    {
+      "name": "01 - GetVersionInformation",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "text/xml; charset=utf-8" },
+          { "key": "SOAPAction", "value": "\"{{soapNs}}/IReplicationSendDumpService/GetVersionInformation\"" }
+        ],
+        "url": { "raw": "{{baseUrl}}/iVendAPI/iVendAPI.svc", "host": ["{{baseUrl}}"], "path": ["iVendAPI", "iVendAPI.svc"] },
+        "body": {
+          "mode": "raw",
+          "raw": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <s:Body>\n    <GetVersionInformation xmlns=\"{{soapNs}}\" />\n  </s:Body>\n</s:Envelope>",
+          "options": { "raw": { "language": "xml" } }
+        },
+        "description": "Version de iVend. En este entorno: 6.6.0.0,6.6.0.0"
+      }
+    },
+    {
+      "name": "02 - ValidateUser",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "text/xml; charset=utf-8" },
+          { "key": "SOAPAction", "value": "\"{{soapNs}}/ILoginService/ValidateUser\"" }
+        ],
+        "url": { "raw": "{{baseUrl}}/iVendAPI/iVendAPI.svc", "host": ["{{baseUrl}}"], "path": ["iVendAPI", "iVendAPI.svc"] },
+        "body": {
+          "mode": "raw",
+          "raw": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <s:Body>\n    <ValidateUser xmlns=\"{{soapNs}}\">\n      <UserId>{{userId}}</UserId>\n      <Password>{{password}}</Password>\n    </ValidateUser>\n  </s:Body>\n</s:Envelope>",
+          "options": { "raw": { "language": "xml" } }
+        },
+        "description": "Valida credenciales contra iVend. Completar la variable 'password' antes de usar.\nOJO: un solo intento, los fallos repetidos pueden bloquear la cuenta."
+      }
+    },
+    {
+      "name": "03 - GetAllStores",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "text/xml; charset=utf-8" },
+          { "key": "SOAPAction", "value": "\"{{soapNs}}/IStoreService/GetAllStores\"" }
+        ],
+        "url": { "raw": "{{baseUrl}}/iVendAPI/iVendAPI.svc", "host": ["{{baseUrl}}"], "path": ["iVendAPI", "iVendAPI.svc"] },
+        "body": {
+          "mode": "raw",
+          "raw": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <s:Body>\n    <GetAllStores xmlns=\"{{soapNs}}\" />\n  </s:Body>\n</s:Envelope>",
+          "options": { "raw": { "language": "xml" } }
+        },
+        "description": "Tiendas con StoreId, BusinessDate, PriceListId y WarehouseId.\nTIENDA01=1000000000000001, TIENDA02, TIENDA03, TIENDADC (centro de distribucion, BusinessDate 2025-02-07 — no usar para ventas)."
+      }
+    },
+    {
+      "name": "04 - GetCustomer por Id",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "text/xml; charset=utf-8" },
+          { "key": "SOAPAction", "value": "\"{{soapNs}}/ICustomerService/GetCustomer\"" }
+        ],
+        "url": { "raw": "{{baseUrl}}/iVendAPI/iVendAPI.svc", "host": ["{{baseUrl}}"], "path": ["iVendAPI", "iVendAPI.svc"] },
+        "body": {
+          "mode": "raw",
+          "raw": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <s:Body>\n    <GetCustomer xmlns=\"{{soapNs}}\">\n      <Id>{{customerId}}</Id>\n    </GetCustomer>\n  </s:Body>\n</s:Envelope>",
+          "options": { "raw": { "language": "xml" } }
+        },
+        "description": "Obtiene un cliente por Id EXACTO. No existe operacion para buscar por email o NIT."
+      }
+    },
+    {
+      "name": "05 - CREAR PEDIDO DE VENTA (SaveTransaction)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const t = pm.response.text();",
+              "const fault = t.match(/<faultstring[^>]*>([^<]*)<\\/faultstring>/);",
+              "if (fault) {",
+              "    console.log('SOAP FAULT: ' + fault[1]);",
+              "    const detail = t.match(/<Message>([^<]*)<\\/Message>/);",
+              "    if (detail) { console.log('Detalle: ' + detail[1]); }",
+              "    pm.test('Fault: ' + fault[1], () => pm.expect.fail(fault[1]));",
+              "} else {",
+              "    const key = t.match(/<Key>([^<]*)<\\/Key>/);",
+              "    const txn = t.match(/<TransactionId>([^<]*)<\\/TransactionId>/);",
+              "    console.log('TransactionKey: ' + (key ? key[1] : 'n/d'));",
+              "    console.log('TransactionId : ' + (txn ? txn[1] : 'n/d'));",
+              "    pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "    if (key) { pm.collectionVariables.set('createdTransactionKey', key[1]); }",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "text/xml; charset=utf-8" },
+          { "key": "SOAPAction", "value": "\"{{soapNs}}/IPostTransactionService/SaveTransaction\"" }
+        ],
+        "url": { "raw": "{{baseUrl}}/iVendAPI/iVendAPI.svc", "host": ["{{baseUrl}}"], "path": ["iVendAPI", "iVendAPI.svc"] },
+        "body": {
+          "mode": "raw",
+          "raw": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <s:Body>\n    <SaveTransaction xmlns=\"{{soapNs}}\">\n      <transaction>\n        <GenerateIntegrationEvent>true</GenerateIntegrationEvent>\n        <StoreId>{{storeId}}</StoreId>\n        <POSId>{{posId}}</POSId>\n        <UserId>{{userId}}</UserId>\n        <TransactionDate>{{transactionDate}}</TransactionDate>\n        <BusinessDate>{{businessDate}}T00:00:00</BusinessDate>\n        <CustomerRefNumber>{{webOrderRef}}</CustomerRefNumber>\n        <CustomerId>{{customerId}}</CustomerId>\n        <Comment>Pedido ecommerce</Comment>\n        <SalesOrderList>\n          <PostTransactionItem>\n            <ProductId>{{productId}}</ProductId>\n            <Description>{{productDescription}}</Description>\n            <TaxCodeId>IVA</TaxCodeId>\n            <Quantity>{{quantity}}</Quantity>\n            <Price>{{unitPrice}}</Price>\n            <OriginalPrice>{{unitPrice}}</OriginalPrice>\n            <OriginalTaxCodeId>IVA</OriginalTaxCodeId>\n          </PostTransactionItem>\n        </SalesOrderList>\n      </transaction>\n    </SaveTransaction>\n  </s:Body>\n</s:Envelope>",
+          "options": { "raw": { "language": "xml" } }
+        },
+        "description": "*** GENERA UNA TRANSACCION REAL EN PRODUCCION ***\n\nSalesOrderList es lo que lo convierte en PEDIDO DE VENTA (no hay campo TransactionType).\nCustomerRefNumber = nro de pedido web (clave de idempotencia).\nGenerateIntegrationEvent=true propaga el pedido a SAP Business One. Poner false para que quede solo en iVend.\n\nEL ORDEN DE LOS ELEMENTOS ES OBLIGATORIO (XSD sequence, campos de la clase base primero).\nValidar antes con: .zcode/ivend-probe/Test-iVendOrder.ps1"
+      }
+    },
+    {
+      "name": "06 - Pedido de venta con pago",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const t = pm.response.text();",
+              "const fault = t.match(/<faultstring[^>]*>([^<]*)<\\/faultstring>/);",
+              "if (fault) { console.log('SOAP FAULT: ' + fault[1]); }",
+              "const key = t.match(/<Key>([^<]*)<\\/Key>/);",
+              "if (key) { pm.collectionVariables.set('createdTransactionKey', key[1]); }"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "text/xml; charset=utf-8" },
+          { "key": "SOAPAction", "value": "\"{{soapNs}}/IPostTransactionService/SaveTransaction\"" }
+        ],
+        "url": { "raw": "{{baseUrl}}/iVendAPI/iVendAPI.svc", "host": ["{{baseUrl}}"], "path": ["iVendAPI", "iVendAPI.svc"] },
+        "body": {
+          "mode": "raw",
+          "raw": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <s:Body>\n    <SaveTransaction xmlns=\"{{soapNs}}\">\n      <transaction>\n        <GenerateIntegrationEvent>true</GenerateIntegrationEvent>\n        <StoreId>{{storeId}}</StoreId>\n        <POSId>{{posId}}</POSId>\n        <UserId>{{userId}}</UserId>\n        <TransactionDate>{{transactionDate}}</TransactionDate>\n        <BusinessDate>{{businessDate}}T00:00:00</BusinessDate>\n        <CustomerRefNumber>{{webOrderRef}}</CustomerRefNumber>\n        <CustomerId>{{customerId}}</CustomerId>\n        <Comment>Pedido ecommerce con pago</Comment>\n        <SalesOrderList>\n          <PostTransactionItem>\n            <ProductId>{{productId}}</ProductId>\n            <Description>{{productDescription}}</Description>\n            <TaxCodeId>IVA</TaxCodeId>\n            <Quantity>{{quantity}}</Quantity>\n            <Price>{{unitPrice}}</Price>\n            <OriginalPrice>{{unitPrice}}</OriginalPrice>\n            <OriginalTaxCodeId>IVA</OriginalTaxCodeId>\n          </PostTransactionItem>\n        </SalesOrderList>\n        <Payments>\n          <TransactionPayment>\n            <TransactionKey i:nil=\"true\" xmlns:i=\"http://www.w3.org/2001/XMLSchema-instance\" />\n            <PaymentTypeId>{{paymentTypeId}}</PaymentTypeId>\n            <TenderType>CreditCard</TenderType>\n            <Amount>{{totalAmount}}</Amount>\n          </TransactionPayment>\n        </Payments>\n      </transaction>\n    </SaveTransaction>\n  </s:Body>\n</s:Envelope>",
+          "options": { "raw": { "language": "xml" } }
+        },
+        "description": "Igual que el 05 pero registrando el cobro.\nMedios de pago reales: TCREDITO, TDEBITO, CASH, QR, GIFTCARD.\nTenderType debe corresponder: CreditCard para TCREDITO/TDEBITO (Type=10), Cash para CASH (Type=0), GiftCertificate para GIFTCARD (Type=3)."
+      }
+    },
+    {
+      "name": "07 - Cerrar pedido (SaleOrderClose)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "text/xml; charset=utf-8" },
+          { "key": "SOAPAction", "value": "\"{{soapNs}}/IPostTransactionService/SaleOrderClose\"" }
+        ],
+        "url": { "raw": "{{baseUrl}}/iVendAPI/iVendAPI.svc", "host": ["{{baseUrl}}"], "path": ["iVendAPI", "iVendAPI.svc"] },
+        "body": {
+          "mode": "raw",
+          "raw": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <s:Body>\n    <SaleOrderClose xmlns=\"{{soapNs}}\">\n      <transactionKey>{{createdTransactionKey}}</transactionKey>\n    </SaleOrderClose>\n  </s:Body>\n</s:Envelope>",
+          "options": { "raw": { "language": "xml" } }
+        },
+        "description": "Cierra un pedido por su TransactionKey. Solo pide transactionKey.\nUsa la variable 'createdTransactionKey', que los requests 05 y 06 setean automaticamente."
+      }
+    },
+    {
+      "name": "08 - Cancelar pedido (CancelSalesOrder)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "text/xml; charset=utf-8" },
+          { "key": "SOAPAction", "value": "\"{{soapNs}}/IMobileIntegrationQueueService/CancelSalesOrder\"" }
+        ],
+        "url": { "raw": "{{baseUrl}}/iVendAPI/iVendAPI.svc", "host": ["{{baseUrl}}"], "path": ["iVendAPI", "iVendAPI.svc"] },
+        "body": {
+          "mode": "raw",
+          "raw": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">\n  <s:Body>\n    <CancelSalesOrder xmlns=\"{{soapNs}}\">\n      <udid></udid>\n      <apiToken></apiToken>\n      <transactionKey>{{createdTransactionKey}}</transactionKey>\n    </CancelSalesOrder>\n  </s:Body>\n</s:Envelope>",
+          "options": { "raw": { "language": "xml" } }
+        },
+        "description": "Cancela un pedido por su TransactionKey.\nOJO: CancelSalesOrder pertenece a la interfaz MOBILE y pide udid/apiToken. Para el ciclo de vida normal usar SaleOrderClose (request 07)."
+      }
+    }
+  ]
+}

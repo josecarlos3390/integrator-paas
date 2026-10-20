@@ -34,6 +34,107 @@ public class ServiceLayerClient
     }
 
     /// <summary>
+    /// Gets an item with stock and price data.
+    /// </summary>
+    public async Task<JsonElement> GetItemAsync(string itemCode, CancellationToken ct = default)
+    {
+        await EnsureLoggedInAsync(ct);
+
+        var url = $"/b1s/v1/Items('{Uri.EscapeDataString(itemCode)}')?$select=ItemCode,ItemName,QuantityOnStock,ItemPrices,ItemWarehouseInfoCollection";
+        var response = await _httpClient.GetAsync(url, ct);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _isLoggedIn = false;
+            await EnsureLoggedInAsync(ct);
+            response = await _httpClient.GetAsync(url, ct);
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            throw new SapIntegrationException($"Item '{itemCode}' not found in SAP.", isBusinessError: true);
+        }
+
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        return document.RootElement.Clone();
+    }
+
+    /// <summary>
+    /// Gets special prices (period and quantity tiers) for an item.
+    /// </summary>
+    public async Task<JsonElement> GetSpecialPricesAsync(string itemCode, CancellationToken ct = default)
+    {
+        await EnsureLoggedInAsync(ct);
+
+        var escaped = Uri.EscapeDataString(itemCode);
+        var url = $"/b1s/v1/SpecialPrices?$filter=ItemCode eq '{escaped}'&$select=ItemCode,CardCode,Price,PriceListNum,DiscountPercent,SpecialPriceDataAreas&$top=50";
+        var response = await _httpClient.GetAsync(url, ct);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _isLoggedIn = false;
+            await EnsureLoggedInAsync(ct);
+            response = await _httpClient.GetAsync(url, ct);
+        }
+
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        return document.RootElement.Clone();
+    }
+
+    /// <summary>
+    /// Gets a Business Partner by CardCode.
+    /// </summary>
+    public async Task<JsonElement> GetBusinessPartnerRawAsync(string cardCode, CancellationToken ct = default)
+    {
+        await EnsureLoggedInAsync(ct);
+
+        var url = $"/b1s/v1/BusinessPartners('{Uri.EscapeDataString(cardCode)}')";
+        var response = await _httpClient.GetAsync(url, ct);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _isLoggedIn = false;
+            await EnsureLoggedInAsync(ct);
+            response = await _httpClient.GetAsync(url, ct);
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            throw new SapIntegrationException($"Business Partner '{cardCode}' not found in SAP.", isBusinessError: true);
+        }
+
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        return document.RootElement.Clone();
+    }
+
+    /// <summary>
+    /// Gets invoices for a customer, newest first.
+    /// </summary>
+    public async Task<JsonElement> GetCustomerInvoicesAsync(
+        string cardCode, int top = 20, int skip = 0, CancellationToken ct = default)
+    {
+        await EnsureLoggedInAsync(ct);
+
+        var escaped = Uri.EscapeDataString(cardCode);
+        var url = $"/b1s/v1/Invoices?$filter=CardCode eq '{escaped}'&$top={top}&$skip={skip}&$orderby=DocDate desc&$select=DocEntry,DocNum,DocDate,DocTotal,DocCurrency,CardCode,CardName,DocumentLines";
+        var response = await _httpClient.GetAsync(url, ct);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _isLoggedIn = false;
+            await EnsureLoggedInAsync(ct);
+            response = await _httpClient.GetAsync(url, ct);
+        }
+
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        return document.RootElement.Clone();
+    }
+
+    /// <summary>
     /// Gets an A/R invoice by its DocEntry.
     /// </summary>
     public async Task<SapInvoice> GetInvoiceAsync(int docEntry, CancellationToken ct = default)
