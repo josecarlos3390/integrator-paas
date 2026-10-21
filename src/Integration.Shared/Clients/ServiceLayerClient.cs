@@ -34,6 +34,108 @@ public class ServiceLayerClient
     }
 
     /// <summary>
+    /// Exporta artículos vendibles para el catálogo del bot, paginando adentro
+    /// por ItemCode (keyset). Evita que el bot tenga credenciales de SAP.
+    /// </summary>
+    public async Task<JsonElement> ExportItemsAsync(
+        string? afterItemCode, int limit, CancellationToken ct = default)
+    {
+        await EnsureLoggedInAsync(ct);
+
+        var take = Math.Clamp(limit, 1, 500);
+        const int pageSize = 20; // tope del Service Layer
+        var collected = new List<JsonElement>();
+        var filter = BaseExportFilter();
+
+        while (collected.Count < take)
+        {
+            if (!string.IsNullOrWhiteSpace(afterItemCode))
+            {
+                filter = BaseExportFilter()
+                         + $" and ItemCode gt '{afterItemCode.Replace("'", "''")}'";
+            }
+
+            var url = "/b1s/v1/Items"
+                      + "?$select=ItemCode,ItemName,ForeignName,User_Text,SalesUnit,ItemsGroupCode,"
+                      + "QuantityOnStock,Valid,SalesItem,Manufacturer,U_FAMILIA,U_LINEA,"
+                      + "U_SC_Sinonimo,UpdateDate,UpdateTime,ItemPrices,BarCode,"
+                      + "SupplierCatalogNo,U_GRUPO,U_PESO,U_UBICACION,U_PAIS_FABRIC"
+                      + "&$orderby=ItemCode"
+                      + $"&$top={pageSize}&$filter={Uri.EscapeDataString(filter)}";
+
+            var response = await _httpClient.GetAsync(url, ct);
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                _isLoggedIn = false;
+                await EnsureLoggedInAsync(ct);
+                continue;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorJson = await response.Content.ReadAsStringAsync(ct);
+                var sapError = TryParseSapError(errorJson);
+                throw new SapIntegrationException(
+                    sapError?.Message ?? $"SAP item export failed: {response.StatusCode}",
+                    sapError?.Code,
+                    isBusinessError: (int)response.StatusCode >= 400 && (int)response.StatusCode < 500);
+            }
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            var page = document.RootElement.GetProperty("value");
+            var rows = page.EnumerateArray().Select(row => row.Clone()).ToList();
+            if (rows.Count == 0)
+            {
+                break;
+            }
+
+            collected.AddRange(rows);
+            afterItemCode = rows[^1].GetProperty("ItemCode").GetString();
+        }
+
+        return JsonSerializer.SerializeToElement(collected);
+    }
+
+    private static string BaseExportFilter() =>
+        "Valid eq 'tYES' and SalesItem eq 'tYES' and ItemType eq 'itItems'";
+
+    /// <summary>
+    /// Lista de grupos de artículos o fabricantes (para los nombres del catálogo).
+    /// </summary>
+    public async Task<JsonElement> GetReferenceAsync(
+        string entity, string select, CancellationToken ct = default)
+    {
+        await EnsureLoggedInAsync(ct);
+
+        var collected = new List<JsonElement>();
+        var skip = 0;
+        while (true)
+        {
+            var url = $"/b1s/v1/{entity}?$select={select}&$top=20&$skip={skip}";
+            var response = await _httpClient.GetAsync(url, ct);
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                _isLoggedIn = false;
+                await EnsureLoggedInAsync(ct);
+                continue;
+            }
+            response.EnsureSuccessStatusCode();
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            var rows = document.RootElement.GetProperty("value")
+                .EnumerateArray().Select(row => row.Clone()).ToList();
+            collected.AddRange(rows);
+            if (rows.Count < 20 || collected.Count >= 5000)
+            {
+                break;
+            }
+            skip += rows.Count;
+        }
+
+        return JsonSerializer.SerializeToElement(collected);
+    }
+
+    /// <summary>
     /// Consulta mínima para mantener viva la sesión del Service Layer.
     /// </summary>
     public async Task PingAsync(CancellationToken ct = default)

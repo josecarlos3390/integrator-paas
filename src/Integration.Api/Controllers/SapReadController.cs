@@ -31,6 +31,56 @@ public class SapReadController : ControllerBase
     }
 
     /// <summary>
+    /// Exporta una página del catálogo para la sincronización del bot.
+    /// El bot deja de necesitar credenciales de SAP.
+    /// </summary>
+    [HttpGet("items/export")]
+    public async Task<IActionResult> ExportItems(
+        [FromQuery] string? after,
+        [FromQuery] int limit,
+        CancellationToken ct)
+    {
+        try
+        {
+            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? _defaultTenantId;
+            var client = await _clientFactory.GetSapClientAsync(tenantId);
+            var items = await client.ExportItemsAsync(after, limit <= 0 ? 200 : limit, ct);
+            return Ok(items);
+        }
+        catch (SapIntegrationException ex)
+        {
+            return UnprocessableEntity(new { error = ex.Message, code = ex.SapErrorCode });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error exportando el catálogo");
+            return StatusCode(502, new { error = "SAP export failed" });
+        }
+    }
+
+    /// <summary>
+    /// Grupos de artículos y fabricantes, para traducir códigos a nombres.
+    /// </summary>
+    [HttpGet("catalog-reference")]
+    public async Task<IActionResult> CatalogReference(CancellationToken ct)
+    {
+        try
+        {
+            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? _defaultTenantId;
+            var client = await _clientFactory.GetSapClientAsync(tenantId);
+            var groups = await client.GetReferenceAsync("ItemGroups", "Number,GroupName", ct);
+            var manufacturers = await client.GetReferenceAsync(
+                "Manufacturers", "Code,ManufacturerName", ct);
+            return Ok(new { groups, manufacturers });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error leyendo grupos y fabricantes");
+            return StatusCode(502, new { error = "SAP reference failed" });
+        }
+    }
+
+    /// <summary>
     /// Busca artículos por nombre en SAP (para la caché del bot).
     /// </summary>
     [HttpGet("items")]
