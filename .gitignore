@@ -30,6 +30,12 @@ logs/
 .env
 *.secrets.json
 
+# Environment-specific overrides (server/local). Keep them on the machine, not in git.
+src/Integration.Api/appsettings.Production.json
+src/Integration.Worker/appsettings.Production.json
+src/Integration.Api/appsettings.Local.json
+src/Integration.Worker/appsettings.Local.json
+
 # Docker volumes
 postgres-data/
 rabbitmq-data/

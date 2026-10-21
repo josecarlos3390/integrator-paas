@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -71,34 +71,34 @@ namespace Integration.Shared.Infrastructure.Migrations
                 );
                 """);
 
-            migrationBuilder.CreateTable(
-                name: "integration_requests",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    tenant_id = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    correlation_id = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    source_system = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    target_system = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    entity_type = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    operation = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
-                    external_id = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
-                    payload = table.Column<string>(type: "text", nullable: false),
-                    callback_url = table.Column<string>(type: "text", nullable: true),
-                    status = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
-                    attempt_count = table.Column<int>(type: "integer", nullable: false),
-                    error_message = table.Column<string>(type: "text", nullable: true),
-                    result_payload = table.Column<string>(type: "text", nullable: true),
-                    priority = table.Column<int>(type: "integer", nullable: false),
-                    received_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    processed_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    next_retry_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    leased_until = table.Column<DateTime>(type: "timestamp with time zone", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_integration_requests", x => x.id);
-                });
+            // integration_requests also pre-exists in the deployed database.
+            // Use IF NOT EXISTS so the migration is applicable both on the
+            // existing database and on a fresh one.
+            migrationBuilder.Sql(
+                """
+                CREATE TABLE IF NOT EXISTS integration_requests (
+                    id uuid NOT NULL,
+                    tenant_id character varying(64) NOT NULL,
+                    correlation_id character varying(64) NOT NULL,
+                    source_system character varying(64) NOT NULL,
+                    target_system character varying(64) NOT NULL,
+                    entity_type character varying(64) NOT NULL,
+                    operation character varying(32) NOT NULL,
+                    external_id character varying(128) NOT NULL,
+                    payload text NOT NULL,
+                    callback_url text NULL,
+                    status character varying(32) NOT NULL,
+                    attempt_count integer NOT NULL,
+                    error_message text NULL,
+                    result_payload text NULL,
+                    priority integer NOT NULL,
+                    received_at timestamp with time zone NOT NULL,
+                    processed_at timestamp with time zone NULL,
+                    next_retry_at timestamp with time zone NULL,
+                    leased_until timestamp with time zone NULL,
+                    CONSTRAINT pk_integration_requests PRIMARY KEY (id)
+                );
+                """);
 
             migrationBuilder.Sql(
                 """
@@ -111,19 +111,16 @@ namespace Integration.Shared.Infrastructure.Migrations
                 );
                 """);
 
-            migrationBuilder.CreateTable(
-                name: "tenant_settings",
-                columns: table => new
-                {
-                    tenant_id = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    setting_key = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
-                    setting_value = table.Column<string>(type: "text", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_tenant_settings", x => new { x.tenant_id, x.setting_key });
-                });
+            migrationBuilder.Sql(
+                """
+                CREATE TABLE IF NOT EXISTS tenant_settings (
+                    tenant_id character varying(64) NOT NULL,
+                    setting_key character varying(128) NOT NULL,
+                    setting_value text NOT NULL,
+                    updated_at timestamp with time zone NOT NULL,
+                    CONSTRAINT pk_tenant_settings PRIMARY KEY (tenant_id, setting_key)
+                );
+                """);
 
             migrationBuilder.Sql(
                 """

@@ -1,8 +1,10 @@
 using System.Text.Json;
 using Integration.Shared.Clients;
+using Integration.Shared.Configuration;
 using Integration.Shared.Dtos;
 using Integration.Shared.Exceptions;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Integration.Api.Controllers;
 
@@ -16,13 +18,81 @@ public class SapReadController : ControllerBase
 {
     private readonly ITenantClientFactory _clientFactory;
     private readonly ILogger<SapReadController> _logger;
+    private readonly string _defaultTenantId;
 
     public SapReadController(
         ITenantClientFactory clientFactory,
+        IOptions<TenantsConfig> tenantsConfig,
         ILogger<SapReadController> logger)
     {
         _clientFactory = clientFactory;
         _logger = logger;
+        _defaultTenantId = tenantsConfig.Value.DefaultTenantId;
+    }
+
+    /// <summary>
+    /// Busca artículos por nombre en SAP (para la caché del bot).
+    /// </summary>
+    [HttpGet("items")]
+    public async Task<IActionResult> SearchItems(
+        [FromQuery] string q,
+        [FromQuery] int limit,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(q))
+        {
+            return BadRequest(new { error = "Falta el parámetro q" });
+        }
+        var take = limit <= 0 ? 8 : Math.Min(limit, 25);
+        try
+        {
+            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? _defaultTenantId;
+            var client = await _clientFactory.GetSapClientAsync(tenantId);
+            var items = await client.SearchItemsAsync(q, take, ct);
+
+            var result = new List<object>();
+            if (items.ValueKind != JsonValueKind.Array)
+            {
+                return Ok(new { query = q, items = result });
+            }
+            foreach (var item in items.EnumerateArray())
+            {
+                var price = 0m;
+                if (item.TryGetProperty("ItemPrices", out var prices))
+                {
+                    foreach (var entry in prices.EnumerateArray())
+                    {
+                        if (entry.TryGetProperty("PriceList", out var list) && list.GetInt32() == 1)
+                        {
+                            price = entry.GetProperty("Price").GetDecimal();
+                            break;
+                        }
+                    }
+                    if (price == 0m && prices.GetArrayLength() > 0)
+                    {
+                        price = prices[0].GetProperty("Price").GetDecimal();
+                    }
+                }
+                result.Add(new
+                {
+                    sku = item.GetProperty("ItemCode").GetString(),
+                    name = item.GetProperty("ItemName").GetString(),
+                    price,
+                    stock = item.TryGetProperty("QuantityOnStock", out var qty) ? (int)qty.GetDecimal() : 0,
+                    currency = "BOB"
+                });
+            }
+            return Ok(new { query = q, items = result });
+        }
+        catch (SapIntegrationException ex)
+        {
+            return UnprocessableEntity(new { error = ex.Message, code = ex.SapErrorCode });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error buscando artículos {Query} en SAP", q);
+            return StatusCode(502, new { error = "SAP search failed" });
+        }
     }
 
     [HttpGet("items/{sku}")]
@@ -30,7 +100,7 @@ public class SapReadController : ControllerBase
     {
         try
         {
-            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? "tenant-001";
+            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? _defaultTenantId;
             var client = await _clientFactory.GetSapClientAsync(tenantId);
             var item = await client.GetItemAsync(sku, ct);
 
@@ -95,7 +165,7 @@ public class SapReadController : ControllerBase
     {
         try
         {
-            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? "tenant-001";
+            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? _defaultTenantId;
             var client = await _clientFactory.GetSapClientAsync(tenantId);
             var data = await client.GetSpecialPricesAsync(sku, ct);
 
@@ -161,7 +231,7 @@ public class SapReadController : ControllerBase
     {
         try
         {
-            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? "tenant-001";
+            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? _defaultTenantId;
             var client = await _clientFactory.GetSapClientAsync(tenantId);
             var invoice = await client.GetInvoiceAsync(docEntry, ct);
             return Ok(invoice);
@@ -186,7 +256,7 @@ public class SapReadController : ControllerBase
     {
         try
         {
-            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? "tenant-001";
+            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? _defaultTenantId;
             var client = await _clientFactory.GetSapClientAsync(tenantId);
             var data = await client.GetCustomerInvoicesAsync(cardCode, Math.Clamp(top, 1, 100), Math.Max(skip, 0), ct);
             return Ok(data);
@@ -207,7 +277,7 @@ public class SapReadController : ControllerBase
     {
         try
         {
-            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? "tenant-001";
+            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? _defaultTenantId;
             var client = await _clientFactory.GetSapClientAsync(tenantId);
             var partner = await client.GetBusinessPartnerRawAsync(cardCode, ct);
             return Ok(partner);

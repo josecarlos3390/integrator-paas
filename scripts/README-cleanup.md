@@ -2,7 +2,7 @@
 
 ## Cambio reciente: Naming Convention snake_case
 
-Ahora EF Core usa `EFCore.NamingConventions` para generar **todas las tablas y columnas en snake_case** automáticamente. Esto evita el desorden de tener tablas en snake_case pero columnas en PascalCase.
+Ahora EF Core usa `EFCore.NamingConventions` para generar **todas las tablas y columnas en snake_case** automÃ¡ticamente. Esto evita el desorden de tener tablas en snake_case pero columnas en PascalCase.
 
 ---
 
@@ -16,7 +16,7 @@ Primero hay que aplicar la migration que renombra todas las columnas a snake_cas
 dotnet ef database update --project src\Integration.Shared\Integration.Shared.csproj --startup-project src\Integration.Api\Integration.Api.csproj
 ```
 
-> Si la base está vacía o tenés problemas, podés dropearla y recrearla:
+> Si la base estÃ¡ vacÃ­a o tenÃ©s problemas, podÃ©s dropearla y recrearla:
 > ```powershell
 > docker exec integration-postgres dropdb -U integration integration_bus
 > docker exec integration-postgres createdb -U integration integration_bus
@@ -42,13 +42,13 @@ Ctrl + C
 .\scripts\seed-tenant.ps1
 ```
 
-### 4. Limpiar HANA (manual vía HANA Studio / DBeaver)
+### 4. Limpiar HANA (manual vÃ­a HANA Studio / DBeaver)
 
 ```sql
 TRUNCATE TABLE INTEGRATION_BUS.OUTBOX_EVENTS;
 ```
 
-Verificar que quedó vacía:
+Verificar que quedÃ³ vacÃ­a:
 ```sql
 SELECT COUNT(*) FROM INTEGRATION_BUS.OUTBOX_EVENTS;
 ```
@@ -88,7 +88,7 @@ dotnet run --project src\Integration.Worker
 | Script | Uso |
 |---|---|
 | `cleanup-all.ps1` | Limpia todas las tablas PostgreSQL |
-| `seed-tenant.ps1` | Inserta `tenant-001` |
+| `seed-tenant.ps1` | Inserta `VIAGGIO_QA` |
 | `update-tenant.ps1` | Actualiza campos del tenant |
 | `cleanup-hana.sql` | Trunca `OUTBOX_EVENTS` en HANA |
 | `hana-post-transaction-notice-v2.sql` | Recrea el SP en HANA |

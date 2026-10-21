@@ -2,35 +2,52 @@
 
 ## Decisión
 
-Para el piloto: **un proceso Worker por instancia SAP**.
+**Un Worker por schema/company DB.** El `TENANT_ID` del outbox es el nombre del
+schema de origen, no un identificador genérico. `tenant-001` quedó retirado.
 
 ```text
-Worker viaggio-qa   → HANA hanaroda   → Service Layer VIAGGIO_QA
-Worker retail-qa5   → HANA hanaroda25 → Service Layer RETAIL_QA5
+Worker VIAGGIO_QA  → HANA hanaroda   → Service Layer VIAGGIO_QA
+Worker RETAIL_QA5 → HANA hanaroda25 → Service Layer RETAIL_QA5
 ```
 
 El código es el mismo; cambia la configuración de cada proceso.
 
-Más adelante se puede implementar un Worker con múltiples pollers, pero
-requiere un pool HANA y un repositorio por tenant.
-
 ## Variables por Worker
 
+### RETAIL_QA5 (hanaroda25)
+
 ```env
-Tenants__DefaultTenantId=retail-qa5
+Tenants__DefaultTenantId=RETAIL_QA5
 Hana__ConnectionString=Driver={HDBODBC};SERVERNODE=hanaroda25.gruporoda.com:30015;Database=RETAIL_QA5;UID=...;PWD=...;CS=INTEGRATION_BUS;
 Sap__ServiceLayerUrl=https://hanaroda25.gruporoda.com:50000
 Sap__CompanyDB=RETAIL_QA5
 ```
 
+### VIAGGIO_QA (hanaroda)
+
+```env
+Tenants__DefaultTenantId=VIAGGIO_QA
+Hana__ConnectionString=Driver={HDBODBC};SERVERNODE=hanaroda.gruporoda.com:30015;Database=INTEGRATION_BUS;UID=...;PWD=...;CS=INTEGRATION_BUS;
+Sap__ServiceLayerUrl=https://hanaroda.gruporoda.com:50000
+Sap__CompanyDB=VIAGGIO_QA
+```
+
 ## Script
 
 ```powershell
+# RETAIL_QA5
 .\scripts\start-worker.ps1 `
-  -TenantId retail-qa5 `
+  -TenantId RETAIL_QA5 `
   -HanaConnectionString "Driver={HDBODBC};SERVERNODE=hanaroda25.gruporoda.com:30015;Database=RETAIL_QA5;UID=...;PWD=...;CS=INTEGRATION_BUS;" `
   -SapServiceLayerUrl "https://hanaroda25.gruporoda.com:50000" `
   -SapCompanyDb "RETAIL_QA5"
+
+# VIAGGIO_QA
+.\scripts\start-worker.ps1 `
+  -TenantId VIAGGIO_QA `
+  -HanaConnectionString "Driver={HDBODBC};SERVERNODE=hanaroda.gruporoda.com:30015;Database=INTEGRATION_BUS;UID=...;PWD=...;CS=INTEGRATION_BUS;" `
+  -SapServiceLayerUrl "https://hanaroda.gruporoda.com:50000" `
+  -SapCompanyDb "VIAGGIO_QA"
 ```
 
 ## Requisitos HANA
@@ -46,24 +63,41 @@ No usar `SYSTEM` en producción.
 
 ## Tenant
 
-Debe existir en `tenant_config`:
+Debe existir en `tenant_config` con el mismo nombre del schema:
 
 ```text
-tenant_id          retail-qa5
+tenant_id          RETAIL_QA5
 sap_company_db     RETAIL_QA5
 sap_service_layer  https://hanaroda25.gruporoda.com:50000
 ```
 
-Y el SP debe escribir el mismo tenant:
+Y el SP del schema debe escribir el mismo tenant:
 
 ```sql
-v_tenant_id := 'retail-qa5';
+-- RETAIL_QA5
+v_tenant_id := 'RETAIL_QA5';
+
+-- VIAGGIO_QA
+v_tenant_id := 'VIAGGIO_QA';
 ```
 
-El bot:
+Para RETAIL_QA5 el SP completo (genérico + `VENDOR_BANK_ALERT`) está en
+`scripts/hana25-post-transaction-notice-with-vendor-bank.sql`.
+El script `hana25-post-transaction-vendor-bank-alert.sql` reemplaza todo el
+procedure, así que solo debe usarse si el schema no tiene el SP genérico.
+
+El bot de WhatsApp:
 
 ```env
-SAP_EVENT_TENANT=retail-qa5
+SAP_EVENT_TENANT=RETAIL_QA5
+```
+
+Su cola `chatbot.sap.events` debe estar bindeada a:
+
+```text
+RETAIL_QA5.4.*
+RETAIL_QA5.7.*
+RETAIL_QA5.13.*
 ```
 
 ## Verificación

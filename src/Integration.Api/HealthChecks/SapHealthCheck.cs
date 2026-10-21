@@ -1,5 +1,7 @@
 using Integration.Shared.Clients;
+using Integration.Shared.Configuration;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 
 namespace Integration.Api.HealthChecks;
 
@@ -11,11 +13,16 @@ public class SapHealthCheck : IHealthCheck
 {
     private readonly ITenantClientFactory _clientFactory;
     private readonly ILogger<SapHealthCheck> _logger;
+    private readonly string _defaultTenantId;
 
-    public SapHealthCheck(ITenantClientFactory clientFactory, ILogger<SapHealthCheck> logger)
+    public SapHealthCheck(
+        ITenantClientFactory clientFactory,
+        IOptions<TenantsConfig> tenantsConfig,
+        ILogger<SapHealthCheck> logger)
     {
         _clientFactory = clientFactory;
         _logger = logger;
+        _defaultTenantId = tenantsConfig.Value.DefaultTenantId;
     }
 
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
@@ -23,7 +30,7 @@ public class SapHealthCheck : IHealthCheck
         try
         {
             // Try to get an SAP client for the default tenant (without explicit login)
-            var client = await _clientFactory.GetSapClientAsync("tenant-001");
+            var client = await _clientFactory.GetSapClientAsync(_defaultTenantId);
             // We make a lightweight request to verify connectivity
             // In production this could be a ping or metadata endpoint
             // For simplicity, we consider that if the factory creates the client, SAP is accessible

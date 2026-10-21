@@ -40,7 +40,8 @@ Este archivo contiene contexto específico para agents que trabajen en este code
 - `TenantClientFactory` es singleton que cachea `ServiceLayerClient` e `ICrmApiClient` por tenant usando `Lazy<Task<T>>` (AsyncLazy pattern). Todos los métodos son async.
 - Cada tenant tiene su propio `CookieContainer` para SAP.
 - Fallback a config global (`appsettings.json`) si el tenant no tiene valores propios.
-- El `TENANT_ID` del outbox debe coincidir con `tenant_config.tenant_id`. Para RETAIL_QA5 se usa `RETAIL_QA5` (mayúsculas); el bot compara case-insensitive pero la configuración debe ser consistente.
+- El `TENANT_ID` del outbox es el **nombre del schema/company DB de origen**, en mayúsculas: `RETAIL_QA5` (hanaroda25) o `VIAGGIO_QA` (hanaroda). `tenant-001` quedó retirado.
+- Debe coincidir exacto con `tenant_config.tenant_id`; el Worker resuelve SAP/CRM y los snapshots por ese ID. Si no coincide, cae al SAP global y puede publicar datos de otra compañía.
 
 ### Bus de eventos SAP
 - El Worker publica `SapDomainEvent`, no `HanaOutboxEvent` crudo.
@@ -54,10 +55,12 @@ Este archivo contiene contexto específico para agents que trabajen en este code
 - Los consumidores deben ser idempotentes por `event_id`; el bot usa `sap_event_inbox`.
 
 ### HANA multi-instancia
-- `hanaroda` y `hanaroda25` son servidores distintos. No usar una conexión HANA global para ambos.
-- Para el piloto se ejecuta un Worker por instancia; ver `docs/worker-por-instancia.md`.
+- `hanaroda` (`VIAGGIO_QA`) y `hanaroda25` (`RETAIL_QA5`) son servidores distintos. No usar una conexión HANA global para ambos.
+- Regla: `TENANT_ID` del outbox = nombre del schema/company DB que genera el registro. Cada instancia/Worker usa su propio `Tenants__DefaultTenantId` y su `Hana__ConnectionString`.
+- Para el piloto se ejecuta un Worker por schema/instancia; ver `docs/worker-por-instancia.md`.
 - No usar `SYSTEM` en producción: crear usuario HANA con `SELECT/UPDATE` sobre `INTEGRATION_BUS.OUTBOX_EVENTS`.
 - El connection string del Worker se puede sobrescribir con `Hana__ConnectionString`.
+- El SP generico de RETAIL_QA5 debe escribir `v_tenant_id := 'RETAIL_QA5'`; el de Viaggio, `v_tenant_id := 'VIAGGIO_QA'`.
 
 ### Idempotencia
 - `IIdempotencyService.TryProcessAsync` envuelve TODO el procesamiento.
@@ -78,8 +81,9 @@ Este archivo contiene contexto específico para agents que trabajen en este code
 - Detección por snapshot propio (`vendor_bank_snapshots`): sin baseline se aprende en silencio, nunca se alerta en la primera vista.
 - La firma compara la **colección completa OCRB** (`accounts_signature`: filas `banco|sucursal|cuenta|iban` normalizadas y ordenadas), no solo la cuenta por defecto del encabezado — detecta cuentas agregadas/eliminadas/modificadas.
 - VENDOR_BANK_ALERT **bypassea la guarda de idempotencia** en `HanaOutboxDispatcher`: la idempotencia llavea por tenant+objectType+aggregateId y descartaría todos los updates posteriores al primero del mismo proveedor. Es comparación de estado, no procesamiento de documento.
-- Telegram (`TelegramNotifier`) es fire-and-forget: nunca lanza excepción; un fallo solo se loguea.
-- Baseline inicial: `POST /api/admin/vendor-bank/baseline?tenantId=X`. Las rutas `/api/admin/**` NO pasan por `ApiKeyMiddleware` — el tenant siempre va explícito por query param.
+- Telegram (`TelegramNotifier`) es fire-and-forget: nunca lanza excepción; un fallo solo se loguea. El bot configurado es `@roho_bank_alert_bot` y el chat es el grupo de alertas.
+- El SP generico de RETAIL_QA5 debe incluir la rama `VENDOR_BANK_ALERT` para proveedores. El script completo (generico + alerta) es `scripts/hana25-post-transaction-notice-with-vendor-bank.sql`; el script `hana25-post-transaction-vendor-bank-alert.sql` solo sirve si el schema NO tiene el SP generico, porque lo reemplaza.
+- Baseline inicial: `POST /api/admin/vendor-bank/baseline?tenantId=RETAIL_QA5`. Las rutas `/api/admin/**` NO pasan por `ApiKeyMiddleware` — el tenant siempre va explícito por query param.
 
 ## Health Checks
 

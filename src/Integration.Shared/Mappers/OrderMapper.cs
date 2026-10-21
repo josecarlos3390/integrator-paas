@@ -23,7 +23,11 @@ public static class OrderMapper
                 ItemCode = l.Sku,
                 Quantity = l.Quantity,
                 UnitPrice = l.Price,
-                WarehouseCode = l.Warehouse ?? crm.Warehouse
+                WarehouseCode = l.Warehouse ?? crm.Warehouse,
+                CostingCode = l.CostingCode,
+                CostingCode2 = l.CostingCode2,
+                CostingCode3 = l.CostingCode3,
+                TaxCode = l.TaxCode
             }).ToList()
         };
     }

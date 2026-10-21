@@ -46,4 +46,16 @@ public class SapOrderLine
 
     [JsonPropertyName("WarehouseCode")]
     public string? WarehouseCode { get; set; }
+
+    [JsonPropertyName("CostingCode")]
+    public string? CostingCode { get; set; }
+
+    [JsonPropertyName("CostingCode2")]
+    public string? CostingCode2 { get; set; }
+
+    [JsonPropertyName("CostingCode3")]
+    public string? CostingCode3 { get; set; }
+
+    [JsonPropertyName("TaxCode")]
+    public string? TaxCode { get; set; }
 }

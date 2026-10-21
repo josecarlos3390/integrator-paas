@@ -197,13 +197,23 @@ builder.Services.AddMassTransit(x =>
             e.ConcurrentMessageLimit = 10;
             e.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(5)));
             e.ConfigureConsumer<CrmSapEventWorker>(context);
-            foreach (var objectType in new[] { "2", "13" })
+
+            // Demo CRM consumer: tenants are configurable so the same build can
+            // run against Viaggio QA and/or the RETAIL pilot without editing code.
+            var crmTenants = builder.Configuration
+                .GetSection("Outbox:CrmQueueTenants")
+                .Get<string[]>() ?? new[] { "RETAIL_QA5" };
+
+            foreach (var tenant in crmTenants)
             {
-                e.Bind("sap.events", b =>
+                foreach (var objectType in new[] { "2", "13" })
                 {
-                    b.ExchangeType = "topic";
-                    b.RoutingKey = $"RETAIL_QA5.{objectType}.*";
-                });
+                    e.Bind("sap.events", b =>
+                    {
+                        b.ExchangeType = "topic";
+                        b.RoutingKey = $"{tenant}.{objectType}.*";
+                    });
+                }
             }
         });
 

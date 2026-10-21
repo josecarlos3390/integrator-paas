@@ -29,7 +29,8 @@ BEGIN
     -- Variables para el evento
     DECLARE v_event_type NVARCHAR(128);
     DECLARE v_card_code NVARCHAR(128);
-    DECLARE v_tenant_id NVARCHAR(64) := 'tenant-001';
+    -- TENANT_ID = schema/company DB where this SP is installed (VIAGGIO_QA instance).
+    DECLARE v_tenant_id NVARCHAR(64) := 'VIAGGIO_QA';
 
     --------------------------------------------------------------------------------------------------------------------------------
     -- BUSINESS PARTNERS (Object Type = '2')

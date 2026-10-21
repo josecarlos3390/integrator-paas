@@ -1,4 +1,4 @@
-﻿using Dapper;
+using Dapper;
 using Integration.Shared.Configuration;
 using Integration.Shared.Infrastructure;
 using Integration.Shared.Repositories;
@@ -20,17 +20,20 @@ public class TestController : ControllerBase
     private readonly HanaConnectionPool _hanaPool;
     private readonly IOptions<HanaConfig> _hanaConfig;
     private readonly ILogger<TestController> _logger;
+    private readonly string _defaultTenantId;
 
     public TestController(
         HanaOutboxRepository hanaRepo,
         HanaConnectionPool hanaPool,
         IOptions<HanaConfig> hanaConfig,
+        IOptions<TenantsConfig> tenantsConfig,
         ILogger<TestController> logger)
     {
         _hanaRepo = hanaRepo;
         _hanaPool = hanaPool;
         _hanaConfig = hanaConfig;
         _logger = logger;
+        _defaultTenantId = tenantsConfig.Value.DefaultTenantId;
     }
 
     /// <summary>
@@ -76,7 +79,7 @@ public class TestController : ControllerBase
         [FromQuery] string? tenantId = null,
         CancellationToken ct = default)
     {
-        tenantId ??= HttpContext.Items["TenantId"]?.ToString() ?? "tenant-001";
+        tenantId ??= HttpContext.Items["TenantId"]?.ToString() ?? _defaultTenantId;
 
         try
         {
@@ -115,7 +118,7 @@ public class TestController : ControllerBase
         [FromQuery] string? tenantId = null,
         CancellationToken ct = default)
     {
-        tenantId ??= HttpContext.Items["TenantId"]?.ToString() ?? "tenant-001";
+        tenantId ??= HttpContext.Items["TenantId"]?.ToString() ?? _defaultTenantId;
 
         try
         {
@@ -156,7 +159,7 @@ public class TestController : ControllerBase
         {
             // Inject the repo via HttpContext.RequestServices to avoid changing the constructor
             var dlqRepo = HttpContext.RequestServices.GetRequiredService<Integration.Shared.Repositories.DeadLetterRepository>();
-            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? "tenant-001";
+            var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? _defaultTenantId;
             var (events, totalCount) = await dlqRepo.GetByTenantAsync(tenantId, 0, take, ct);
             return Ok(new { Items = events, TotalCount = totalCount, Page = 1, PageSize = take });
         }

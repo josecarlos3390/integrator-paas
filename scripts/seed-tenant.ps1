@@ -1,5 +1,5 @@
 # ============================================================================
-# Seed: Inserta el tenant por defecto (tenant-001) en PostgreSQL (Docker)
+# Seed: Inserta el tenant por defecto (VIAGGIO_QA) en PostgreSQL (Docker)
 # ============================================================================
 
 $ErrorActionPreference = "Stop"
@@ -13,7 +13,7 @@ if (-not $running) {
     exit 1
 }
 
-Write-Host "Insertando tenant 'tenant-001' en PostgreSQL..." -ForegroundColor Cyan
+Write-Host "Insertando tenant 'VIAGGIO_QA' en PostgreSQL..." -ForegroundColor Cyan
 
 $seedSql = @"
 INSERT INTO tenant_config (
@@ -22,7 +22,7 @@ INSERT INTO tenant_config (
     crm_base_url, crm_api_key_encrypted, is_active, created_at
 )
 VALUES (
-    'tenant-001',
+    'VIAGGIO_QA',
     'Viaggio QA',
     '2C26B46B68FFC68FF99B453C1D30413413422D706483BFA0F98A5E886266E7AE',
     'https://hanaroda.gruporoda.com:50000',
@@ -47,7 +47,7 @@ ON CONFLICT (tenant_id) DO UPDATE SET
 
 SELECT tenant_id, name, crm_base_url, sap_company_db, sap_user_name, is_active
 FROM tenant_config
-WHERE tenant_id = 'tenant-001';
+WHERE tenant_id = 'VIAGGIO_QA';
 "@
 
 try {
@@ -56,7 +56,7 @@ try {
         throw "docker exec fallo con codigo $LASTEXITCODE"
     }
     Write-Host ""
-    Write-Host "Tenant 'tenant-001' insertado/actualizado correctamente." -ForegroundColor Green
+    Write-Host "Tenant 'VIAGGIO_QA' insertado/actualizado correctamente." -ForegroundColor Green
     Write-Host ""
     Write-Host "Valores actuales:" -ForegroundColor Cyan
     Write-Host $result

@@ -20,4 +20,10 @@ public class CrmOrderLine
     public decimal Quantity { get; set; }
     public decimal Price { get; set; } // UnitPrice
     public string? Warehouse { get; set; }
+
+    // Localización chilena: SAP exige centro de costo e IVA en cada línea.
+    public string? CostingCode { get; set; }
+    public string? CostingCode2 { get; set; }
+    public string? CostingCode3 { get; set; }
+    public string? TaxCode { get; set; }
 }

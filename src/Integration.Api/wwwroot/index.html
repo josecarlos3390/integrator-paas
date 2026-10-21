@@ -431,7 +431,12 @@
 
         // Selected tenant is the single source of truth: every panel sends it as ?tenantId=.
         // Persisted in localStorage so it survives page reloads.
-        let currentTenantId = localStorage.getItem('dashboard.tenantId') || 'tenant-001';
+        // TENANT_ID is the SAP schema/company DB name (RETAIL_QA5, VIAGGIO_QA).
+        let currentTenantId = localStorage.getItem('dashboard.tenantId');
+        if (!currentTenantId || ['tenant-001', 'RETAIL', 'retail-qa5'].includes(currentTenantId)) {
+            currentTenantId = 'RETAIL_QA5';
+            localStorage.setItem('dashboard.tenantId', currentTenantId);
+        }
         let loadedTenants = [];
         let isConnected = true;
 

@@ -71,6 +71,16 @@ public class OutboxConfig
     };
 
     /// <summary>
+    /// Tenants the built-in CRM demo consumer subscribes to. Each value becomes
+    /// a topic binding {tenant}.{objectType}.* on the crm.sap.events queue.
+    /// Real consumers declare their own queues/bindings.
+    /// </summary>
+    public HashSet<string> CrmQueueTenants { get; set; } = new()
+    {
+        "RETAIL_QA5"
+    };
+
+    /// <summary>
     /// Priority by SAP document type (ObjectType). Higher number = higher priority.
     /// If not in the dictionary, uses 0 (default priority).
     /// </summary>

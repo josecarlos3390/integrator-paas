@@ -8,7 +8,7 @@
 # ============================================================================
 
 param(
-    [string]$TenantId = "tenant-001",
+    [string]$TenantId = "RETAIL_QA5",
     [string]$Name,
     [string]$CrmUrl,
     [string]$SapUrl,

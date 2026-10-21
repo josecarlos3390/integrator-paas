@@ -1,7 +1,9 @@
+using Integration.Shared.Configuration;
 using Integration.Shared.Domain;
 using Integration.Shared.Repositories;
 using Integration.Shared.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Integration.Api.Controllers;
 
@@ -20,6 +22,7 @@ public class AdminController : ControllerBase
     private readonly MetricRepository _metricRepo;
     private readonly IAlertingService _alertingService;
     private readonly ILogger<AdminController> _logger;
+    private readonly string _defaultTenantId;
 
     public AdminController(
         DeadLetterRepository deadLetterRepo,
@@ -28,6 +31,7 @@ public class AdminController : ControllerBase
         TenantFeatureFlagRepository featureRepo,
         MetricRepository metricRepo,
         IAlertingService alertingService,
+        IOptions<TenantsConfig> tenantsConfig,
         ILogger<AdminController> logger)
     {
         _deadLetterRepo = deadLetterRepo;
@@ -37,6 +41,7 @@ public class AdminController : ControllerBase
         _metricRepo = metricRepo;
         _alertingService = alertingService;
         _logger = logger;
+        _defaultTenantId = tenantsConfig.Value.DefaultTenantId;
     }
 
     /// <summary>
@@ -48,7 +53,7 @@ public class AdminController : ControllerBase
         [FromQuery] int pageSize = 25,
         CancellationToken ct = default)
     {
-        var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? "tenant-001";
+        var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? _defaultTenantId;
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
         var skip = (page - 1) * pageSize;
@@ -84,7 +89,7 @@ public class AdminController : ControllerBase
         [FromQuery] int pageSize = 25,
         CancellationToken ct = default)
     {
-        var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? "tenant-001";
+        var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? _defaultTenantId;
         var start = from ?? DateTime.UtcNow.AddDays(-7);
         var end = to ?? DateTime.UtcNow;
         page = Math.Max(1, page);
@@ -204,7 +209,7 @@ public class AdminController : ControllerBase
     [HttpPost("price-lists/full-sync")]
     public async Task<IActionResult> TriggerPriceListFullSync(CancellationToken ct = default)
     {
-        var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? "tenant-001";
+        var tenantId = HttpContext.Items["TenantId"]?.ToString() ?? _defaultTenantId;
 
         // Reset cursor to force full scan
         using var scope = HttpContext.RequestServices.CreateScope();

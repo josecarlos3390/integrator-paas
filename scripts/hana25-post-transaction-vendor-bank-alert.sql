@@ -1,6 +1,11 @@
 -- ============================================================================
--- SBO_SP_PostTransactionNotice — RETAIL (hanaroda25 / RETAIL_QA5)
+-- SBO_SP_PostTransactionNotice — RETAIL_QA5 (hanaroda25)
 -- Flujo: VENDOR_BANK_ALERT (alerta anti-fraude por cambio de cuenta bancaria)
+--
+-- OJO: este script REEMPLAZA todo el procedure y solo encola VENDOR_BANK_ALERT.
+-- Si el schema ya tiene el SP generico (clientes/articulos/precios/facturas),
+-- usar mejor scripts\hana25-post-transaction-notice-with-vendor-bank.sql, que
+-- conserva esos eventos y agrega VENDOR_BANK_ALERT.
 --
 -- Encola en INTEGRATION_BUS.OUTBOX_EVENTS unicamente:
 --   - ObjectType '2' (BusinessPartners) con CardType = 'S' (proveedores)
@@ -30,7 +35,8 @@ BEGIN
 
     DECLARE v_event_type NVARCHAR(128);
     DECLARE v_aggregate_id NVARCHAR(256);
-    DECLARE v_tenant_id NVARCHAR(64) := 'RETAIL';
+    -- TENANT_ID = schema/company DB where this SP is installed (RETAIL_QA5 instance).
+    DECLARE v_tenant_id NVARCHAR(64) := 'RETAIL_QA5';
     DECLARE v_card_type NVARCHAR(10);
     DECLARE v_user_sign INT;
 

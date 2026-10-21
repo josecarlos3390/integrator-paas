@@ -1,4 +1,4 @@
-﻿using System.Data.Odbc;
+using System.Data.Odbc;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -17,11 +17,13 @@ public class PriceListPollingWorker : BackgroundService
     private readonly IOptions<PriceListPollingConfig> _config;
     private readonly HanaConnectionPool _hanaPool;
     private readonly ILogger<PriceListPollingWorker> _logger;
+    private readonly string _defaultTenantId;
     private DateTime? _lastItemPriceSync;
 
     public PriceListPollingWorker(
         IServiceScopeFactory scopeFactory,
         IOptions<PriceListPollingConfig> config,
+        IOptions<TenantsConfig> tenantsConfig,
         HanaConnectionPool hanaPool,
         ILogger<PriceListPollingWorker> logger)
     {
@@ -29,6 +31,7 @@ public class PriceListPollingWorker : BackgroundService
         _config = config;
         _hanaPool = hanaPool;
         _logger = logger;
+        _defaultTenantId = tenantsConfig.Value.DefaultTenantId;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -73,7 +76,8 @@ public class PriceListPollingWorker : BackgroundService
         var snapshotRepo = scope.ServiceProvider.GetRequiredService<PriceSnapshotRepository>();
         var hanaRepo = scope.ServiceProvider.GetRequiredService<HanaOutboxRepository>();
 
-        var tenantId = "tenant-001";
+        // Schema/company DB name of this Worker instance (RETAIL_QA5 or VIAGGIO_QA).
+        var tenantId = _defaultTenantId;
 
         // === OPLN Incremental Sync (Price List headers) ===
         await SyncOplnAsync(tenantId, cursorRepo, snapshotRepo, hanaRepo, ct);

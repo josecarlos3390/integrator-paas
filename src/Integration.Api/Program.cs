@@ -143,6 +143,8 @@ builder.Services.AddScoped<VendorBankSnapshotRepository>();
 builder.Services.AddSingleton<ITenantFeatureService, TenantFeatureService>();
 builder.Services.AddSingleton<TenantStatusService>();
 builder.Services.AddMemoryCache();
+// Mantiene viva la sesión SAP (evita el login de ~3,5 s tras cada pausa).
+builder.Services.AddHostedService<Integration.Api.Services.SapSessionKeepAlive>();
 
 // ============================================================================
 // Messaging: MassTransit + RabbitMQ

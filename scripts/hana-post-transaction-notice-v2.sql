@@ -40,7 +40,8 @@ BEGIN
     
     DECLARE v_event_type NVARCHAR(128);
     DECLARE v_aggregate_id NVARCHAR(256);
-    DECLARE v_tenant_id NVARCHAR(64) := 'tenant-001';
+    -- TENANT_ID = schema/company DB where this SP is installed (VIAGGIO_QA instance).
+    DECLARE v_tenant_id NVARCHAR(64) := 'VIAGGIO_QA';
 
     --------------------------------------------------------------------------------------------------------------------------------
     -- Mapear transaction_type a operacion estandar

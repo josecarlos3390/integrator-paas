@@ -34,6 +34,80 @@ public class ServiceLayerClient
     }
 
     /// <summary>
+    /// Consulta mínima para mantener viva la sesión del Service Layer.
+    /// </summary>
+    public async Task PingAsync(CancellationToken ct = default)
+    {
+        await EnsureLoggedInAsync(ct);
+        var response = await _httpClient.GetAsync("/b1s/v1/Items?$top=1&$select=ItemCode", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _isLoggedIn = false;
+            await EnsureLoggedInAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// Searches sellable items by name (used to warm the bot's catalog cache).
+    /// SAP/HANA compara de forma sensible a mayúsculas, por eso se intenta el
+    /// término en mayúsculas y, si no hay filas, tal cual vino.
+    /// </summary>
+    public async Task<JsonElement> SearchItemsAsync(
+        string query, int limit, CancellationToken ct = default)
+    {
+        var upper = query.ToUpperInvariant();
+        var found = await SearchItemsRawAsync(upper, limit, ct);
+        if (found.ValueKind == JsonValueKind.Array && found.GetArrayLength() > 0)
+        {
+            return found;
+        }
+        if (!string.Equals(upper, query, StringComparison.Ordinal))
+        {
+            var original = await SearchItemsRawAsync(query, limit, ct);
+            if (original.ValueKind == JsonValueKind.Array && original.GetArrayLength() > 0)
+            {
+                return original;
+            }
+        }
+        return found;
+    }
+
+    private async Task<JsonElement> SearchItemsRawAsync(
+        string term, int limit, CancellationToken ct)
+    {
+        await EnsureLoggedInAsync(ct);
+
+        var safe = term.Replace("'", "''");
+        var filter = $"contains(ItemName,'{safe}') and Valid eq 'tYES' and SalesItem eq 'tYES'";
+        var url = "/b1s/v1/Items?$select=ItemCode,ItemName,QuantityOnStock,ItemPrices"
+                  + $"&$top={limit}&$filter={Uri.EscapeDataString(filter)}";
+        var response = await _httpClient.GetAsync(url, ct);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _isLoggedIn = false;
+            await EnsureLoggedInAsync(ct);
+            response = await _httpClient.GetAsync(url, ct);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorJson = await response.Content.ReadAsStringAsync(ct);
+            var sapError = TryParseSapError(errorJson);
+            throw new SapIntegrationException(
+                sapError?.Message ?? $"SAP item search failed: {response.StatusCode}",
+                sapError?.Code,
+                isBusinessError: (int)response.StatusCode >= 400 && (int)response.StatusCode < 500);
+        }
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        var value = document.RootElement.TryGetProperty("value", out var rows)
+            ? rows
+            : default;
+        return value.ValueKind == JsonValueKind.Array ? value.Clone() : default;
+    }
+
+    /// <summary>
     /// Gets an item with stock and price data.
     /// </summary>
     public async Task<JsonElement> GetItemAsync(string itemCode, CancellationToken ct = default)
@@ -303,6 +377,44 @@ public class ServiceLayerClient
         var docEntry = result.GetProperty("DocEntry").GetInt32();
         var docNum = result.TryGetProperty("DocNum", out var dn) ? dn.GetInt32() : 0;
         return (docEntry, docNum);
+    }
+
+    /// <summary>
+    /// Creates a business partner in SAP B1. If the CardCode already exists,
+    /// the existing master data is returned instead of failing.
+    /// </summary>
+    public async Task<JsonElement> CreateBusinessPartnerAsync(
+        SapBusinessPartnerPayload payload, CancellationToken ct = default)
+    {
+        await EnsureLoggedInAsync(ct);
+
+        var existing = await _httpClient.GetAsync(
+            $"/b1s/v1/BusinessPartners('{Uri.EscapeDataString(payload.CardCode)}')", ct);
+        if (existing.IsSuccessStatusCode)
+        {
+            return await existing.Content.ReadFromJsonAsync<JsonElement>(ct);
+        }
+
+        var response = await _httpClient.PostAsJsonAsync("/b1s/v1/BusinessPartners", payload, ct);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            _isLoggedIn = false;
+            await EnsureLoggedInAsync(ct);
+            response = await _httpClient.PostAsJsonAsync("/b1s/v1/BusinessPartners", payload, ct);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorJson = await response.Content.ReadAsStringAsync(ct);
+            var sapError = TryParseSapError(errorJson);
+            throw new SapIntegrationException(
+                sapError?.Message ?? $"SAP business partner creation failed: {response.StatusCode}",
+                sapError?.Code,
+                isBusinessError: (int)response.StatusCode >= 400 && (int)response.StatusCode < 500);
+        }
+
+        return await response.Content.ReadFromJsonAsync<JsonElement>(ct);
     }
 
     /// <summary>
