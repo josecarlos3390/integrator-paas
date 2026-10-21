@@ -1,5 +1,5 @@
 // ============================================================================
-// SAP Business One Add-on â€” PostTransaction Handler
+// SAP Business One Add-on — PostTransaction Handler
 // ============================================================================
 // This code runs INSIDE the SAP B1 process as a DI API Add-on.
 // It connects to SAP HANA (schema INTEGRATION_BUS) and inserts a minimal

@@ -2,7 +2,7 @@
 -- Script de prueba para INTEGRATION_BUS.OUTBOX_EVENTS
 -- ============================================================================
 -- Ejecuta esto directamente en SAP HANA (por ejemplo, desde la Consola SQL
--- de SAP HANA Studio o DBeaver) para simular que el Add-on creÃ³ facturas.
+-- de SAP HANA Studio o DBeaver) para simular que el Add-on creó facturas.
 -- Luego verifica que el Integration.Worker las procese.
 -- ============================================================================
 
