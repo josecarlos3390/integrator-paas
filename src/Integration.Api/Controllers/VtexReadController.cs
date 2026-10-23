@@ -110,6 +110,7 @@ public class VtexReadController : ControllerBase
                         stock,
                         image_url = imageUrl,
                         images = ImageUrls(item),
+                        specifications = Specifications(product),
                         attributes = new Dictionary<string, object?>
                         {
                             ["source"] = "vtex",
@@ -898,6 +899,44 @@ public class VtexReadController : ControllerBase
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Select(value => value!)
             .ToList();
+    }
+
+    /// <summary>
+    /// Especificaciones del producto (Garantía, Medidas, Material, etc.).
+    /// VTEX las expone como arrays con el nombre como propiedad.
+    /// </summary>
+    private static Dictionary<string, string> Specifications(JsonElement product)
+    {
+        var specs = new Dictionary<string, string>();
+        if (product.ValueKind != JsonValueKind.Object ||
+            !product.TryGetProperty("allSpecifications", out var names) ||
+            names.ValueKind != JsonValueKind.Array)
+        {
+            return specs;
+        }
+
+        foreach (var nameElement in names.EnumerateArray())
+        {
+            var name = nameElement.GetString();
+            if (string.IsNullOrWhiteSpace(name) ||
+                !product.TryGetProperty(name, out var values) ||
+                values.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            var joined = string.Join(
+                " / ",
+                values.EnumerateArray()
+                    .Select(value => value.GetString())
+                    .Where(value => !string.IsNullOrWhiteSpace(value)));
+            if (!string.IsNullOrWhiteSpace(joined))
+            {
+                specs[name!] = joined;
+            }
+        }
+
+        return specs;
     }
 
     private static string? Text(JsonElement element, string name)
