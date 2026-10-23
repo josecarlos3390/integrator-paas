@@ -46,6 +46,7 @@ builder.Services.Configure<TenantsConfig>(builder.Configuration.GetSection("Tena
 builder.Services.Configure<IngestionConfig>(builder.Configuration.GetSection("Ingestion"));
 builder.Services.Configure<AdminConfig>(builder.Configuration.GetSection("Admin"));
 builder.Services.Configure<TenantCacheConfig>(builder.Configuration.GetSection("TenantCache"));
+builder.Services.Configure<VtexConfig>(builder.Configuration.GetSection("Vtex"));
 
 // ============================================================================
 // Observability: OpenTelemetry
@@ -125,6 +126,7 @@ builder.Services.AddHttpClient("crm-base")
     });
 
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient<VtexClient>();
 builder.Services.AddSingleton<ITenantClientFactory, TenantClientFactory>();
 builder.Services.AddScoped<HanaOutboxRepository>();
 builder.Services.AddScoped<AlertRepository>();

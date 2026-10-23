@@ -122,6 +122,40 @@ public class TenantCacheConfig
     public int ClientCacheTtlSeconds { get; set; } = 300;
 }
 
+/// <summary>
+/// VTEX read-only facade configuration (PaasVTEX). Credentials stay in the
+/// PaaS; the bot only receives the normalized /api/vtex response.
+/// </summary>
+public class VtexConfig
+{
+    public string Account { get; set; } = string.Empty;
+    public string AppKey { get; set; } = string.Empty;
+    public string AppToken { get; set; } = string.Empty;
+    public int SalesChannel { get; set; } = 1;
+    public string Currency { get; set; } = "BOB";
+
+    /// <summary>
+    /// Maps the store code used by the bot (e.g. 101-1001) to the VTEX
+    /// warehouse id returned by the Logistics API.
+    /// </summary>
+    public Dictionary<string, string> WarehouseMap { get; set; } = new();
+
+    public string BaseUrl =>
+        string.IsNullOrWhiteSpace(Account)
+            ? string.Empty
+            : $"https://{Account}.vtexcommercestable.com.br";
+
+    public string PricingUrl =>
+        string.IsNullOrWhiteSpace(Account)
+            ? string.Empty
+            : $"https://api.vtex.com/{Account}";
+
+    public bool IsConfigured =>
+        !string.IsNullOrWhiteSpace(Account) &&
+        !string.IsNullOrWhiteSpace(AppKey) &&
+        !string.IsNullOrWhiteSpace(AppToken);
+}
+
 public class AlertingConfig
 {
     public bool Enabled { get; set; } = true;
